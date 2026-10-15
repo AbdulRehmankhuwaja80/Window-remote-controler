@@ -46,6 +46,8 @@ fun RemoteDesktopScreen(
     var latencyMs by remember { mutableStateOf(32L) }
     var zoomScale by remember { mutableStateOf(1.0f) }
 
+    var isStreamReady by remember { mutableStateOf(webRtcClient.latestVideoTrack != null) }
+
     val gestureHandler = remember {
         TouchGestureHandler(context) { msg ->
             webRtcClient.sendInputMessage(msg)
@@ -85,6 +87,7 @@ fun RemoteDesktopScreen(
                             )
                             webRtcClient.onRemoteVideoTrackReceived = { track ->
                                 track.addSink(this)
+                                isStreamReady = true
                             }
                         }
                     },
@@ -95,6 +98,37 @@ fun RemoteDesktopScreen(
                         )
                     }
                 )
+
+                // Connecting overlay if stream is not ready yet
+                if (!isStreamReady) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(DarkNavyBackground),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                color = ElectricBluePrimary,
+                                modifier = Modifier.size(52.dp),
+                                strokeWidth = 4.dp
+                            )
+                            Text(
+                                text = "Connecting to $deviceName...",
+                                color = TextPrimary,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Establishing secure WebRTC stream & inputs",
+                                color = TextSecondary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
 
                 // Top Floating Status HUD
                 Row(

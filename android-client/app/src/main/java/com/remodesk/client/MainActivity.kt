@@ -71,9 +71,8 @@ class MainActivity : ComponentActivity() {
                         DashboardScreen(
                             tokenManager = tokenManager,
                             onConnectDevice = { device ->
-                                initiateRemoteSession(device) {
-                                    navController.navigate("remote/${device.id}/${device.deviceName}")
-                                }
+                                initiateRemoteSession(device)
+                                navController.navigate("remote/${device.id}/${device.deviceName}")
                             },
                             onNavigateToFileManager = { device ->
                                 navController.navigate("files/${device.id}/${device.deviceName}")
@@ -155,22 +154,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun initiateRemoteSession(device: Device, onSessionReady: () -> Unit) {
+    private fun initiateRemoteSession(device: Device) {
         val token = tokenManager.authToken ?: return
         val serverBase = tokenManager.serverUrl
         val wsUrl = serverBase.replace("http://", "ws://").replace("https://", "wss://") + "/ws/signaling"
 
-        CoroutineScope(Dispatchers.Main).launch {
-            try {
-                Toast.makeText(this@MainActivity, "Requesting remote session...", Toast.LENGTH_SHORT).show()
+        // Initialize WebRTC immediately so the remote screen has a non-null client
+        val rtc = WebRtcClient(this@MainActivity, eglBase)
+        webRtcClient = rtc
 
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
                 val api = ApiService.create(serverBase, tokenManager)
                 val sessionResp = api.startSession(mapOf("device_id" to device.id, "client_info" to "Android Mobile"))
 
-                // Initialize WebRTC
-                val rtc = WebRtcClient(this@MainActivity, eglBase)
                 rtc.createPeerConnection(sessionResp.iceServers)
-                webRtcClient = rtc
 
                 // Initialize Signaling
                 val sig = SignalingClient(wsUrl, token)
@@ -187,16 +185,16 @@ class MainActivity : ComponentActivity() {
                 }
 
                 sig.onSessionRejected = { reason ->
-                    Toast.makeText(this@MainActivity, "Session declined: $reason", Toast.LENGTH_LONG).show()
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "Session declined: $reason", Toast.LENGTH_LONG).show()
+                    }
                 }
 
                 sig.onAnswerReceived = { sdpAnswer ->
                     rtc.handleRemoteAnswer(sdpAnswer)
-                    onSessionReady()
                 }
 
                 sig.onIceCandidateReceived = { candJson ->
-                    // Parse candidate and add
                     try {
                         val jObj = com.google.gson.JsonParser.parseString(candJson).asJsonObject
                         val sdpMid = jObj.get("sdpMid")?.asString ?: "0"
@@ -214,7 +212,9 @@ class MainActivity : ComponentActivity() {
 
                 sig.connect()
             } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, "Connection failed: ${e.message}", Toast.LENGTH_LONG).show()
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Connection failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }

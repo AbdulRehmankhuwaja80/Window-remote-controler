@@ -17,9 +17,14 @@ class WebRtcClient(
     private var peerConnection: PeerConnection? = null
     private var dataChannel: DataChannel? = null
 
+    var latestVideoTrack: VideoTrack? = null
     var onIceCandidateGenerated: ((candidate: String) -> Unit)? = null
     var onDataChannelStateChange: ((isOpen: Boolean) -> Unit)? = null
     var onRemoteVideoTrackReceived: ((VideoTrack) -> Unit)? = null
+        set(value) {
+            field = value
+            latestVideoTrack?.let { value?.invoke(it) }
+        }
     var onConnectionStateChange: ((PeerConnection.PeerConnectionState) -> Unit)? = null
     var onMessageReceived: ((String) -> Unit)? = null
 
@@ -101,6 +106,7 @@ class WebRtcClient(
             override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
                 val track = receiver?.track()
                 if (track is VideoTrack) {
+                    latestVideoTrack = track
                     onRemoteVideoTrackReceived?.invoke(track)
                 }
             }
