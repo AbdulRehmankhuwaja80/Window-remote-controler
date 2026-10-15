@@ -23,3 +23,6 @@ local.properties
 
 # Environment
 .env
+
+# Binary Archives
+Apk/*.zip
