@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: remodesk_gateway
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://remodesk:secure_db_pass@db:5432/remodesk_db
+      - SECRET_KEY=remodesk-ultra-production-secret-key-32chars-min
+      - TURN_SERVER_URL=coturn:3478
+      - TURN_SECRET=remodesk-coturn-shared-secret
+    depends_on:
+      - db
+      - coturn
+
+  db:
+    image: postgres:16-alpine
+    container_name: remodesk_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=remodesk
+      - POSTGRES_PASSWORD=secure_db_pass
+      - POSTGRES_DB=remodesk_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  coturn:
+    image: coturn/coturn:latest
+    container_name: remodesk_turn
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/turnserver.conf:ro
+    command: ["-c", "/etc/turnserver.conf"]
+
+volumes:
+  pgdata:

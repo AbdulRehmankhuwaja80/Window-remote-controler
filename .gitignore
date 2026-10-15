@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+backend_venv/
+.pytest_cache/
+remodesk.db
+
+# .NET / C#
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Android
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+local.properties
+
+# Environment
+.env
