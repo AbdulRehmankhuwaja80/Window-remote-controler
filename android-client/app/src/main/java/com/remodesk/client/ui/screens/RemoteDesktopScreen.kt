@@ -2,8 +2,10 @@ package com.remodesk.client.ui.screens
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.view.MotionEvent
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -16,17 +18,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.remodesk.client.ui.theme.*
 import com.remodesk.client.webrtc.InputEventProtocol
 import com.remodesk.client.webrtc.WebRtcClient
-import org.webrtc.EglBase
-import org.webrtc.RendererCommon
-import org.webrtc.SurfaceViewRenderer
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -34,7 +35,6 @@ fun RemoteDesktopScreen(
     deviceId: String,
     deviceName: String,
     webRtcClient: WebRtcClient,
-    eglBase: EglBase,
     onDisconnect: () -> Unit
 ) {
     val context = LocalContext.current
@@ -43,14 +43,36 @@ fun RemoteDesktopScreen(
     var isTouchpadMode by remember { mutableStateOf(false) }
     var isKeyboardVisible by remember { mutableStateOf(false) }
     var isFitMode by remember { mutableStateOf(true) }
-    var latencyMs by remember { mutableStateOf(32L) }
+    var latencyMs by remember { mutableStateOf(0L) }
     var zoomScale by remember { mutableStateOf(1.0f) }
-
-    var isStreamReady by remember { mutableStateOf(webRtcClient.latestVideoTrack != null) }
+    var isStreamReady by remember { mutableStateOf(false) }
+    var currentFrame by remember { mutableStateOf<ImageBitmap?>(null) }
+    var frameCount by remember { mutableIntStateOf(0) }
 
     val gestureHandler = remember {
         TouchGestureHandler(context) { msg ->
             webRtcClient.sendInputMessage(msg)
+        }
+    }
+
+    // Wire up frame receiving
+    DisposableEffect(webRtcClient) {
+        val startTime = System.currentTimeMillis()
+        webRtcClient.onFrameReceived = { jpegBytes ->
+            try {
+                val bmp = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+                if (bmp != null) {
+                    currentFrame = bmp.asImageBitmap()
+                    if (!isStreamReady) isStreamReady = true
+                    frameCount++
+                    latencyMs = (System.currentTimeMillis() - startTime) / maxOf(frameCount, 1).toLong()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        onDispose {
+            webRtcClient.onFrameReceived = null
         }
     }
 
@@ -62,44 +84,29 @@ fun RemoteDesktopScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                // Video Surface
-                AndroidView(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInteropFilter { motionEvent ->
-                            if (!isTouchpadMode) {
-                                val width = context.resources.displayMetrics.widthPixels.toFloat()
-                                val height = context.resources.displayMetrics.heightPixels.toFloat()
-                                gestureHandler.handleTouchEvent(motionEvent, width, height) { factor ->
-                                    zoomScale = (zoomScale * factor).coerceIn(1.0f, 4.0f)
+                // Desktop Frame Display
+                if (currentFrame != null) {
+                    Image(
+                        bitmap = currentFrame!!,
+                        contentDescription = "Remote Desktop",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInteropFilter { motionEvent ->
+                                if (!isTouchpadMode) {
+                                    val width = context.resources.displayMetrics.widthPixels.toFloat()
+                                    val height = context.resources.displayMetrics.heightPixels.toFloat()
+                                    gestureHandler.handleTouchEvent(motionEvent, width, height) { factor ->
+                                        zoomScale = (zoomScale * factor).coerceIn(1.0f, 4.0f)
+                                    }
+                                } else {
+                                    false
                                 }
-                            } else {
-                                false
-                            }
-                        },
-                    factory = { ctx ->
-                        SurfaceViewRenderer(ctx).apply {
-                            init(eglBase.eglBaseContext, null)
-                            setEnableHardwareScaler(true)
-                            setScalingType(
-                                if (isFitMode) RendererCommon.ScalingType.SCALE_ASPECT_FIT
-                                else RendererCommon.ScalingType.SCALE_ASPECT_FILL
-                            )
-                            webRtcClient.onRemoteVideoTrackReceived = { track ->
-                                track.addSink(this)
-                                isStreamReady = true
-                            }
-                        }
-                    },
-                    update = { view ->
-                        view.setScalingType(
-                            if (isFitMode) RendererCommon.ScalingType.SCALE_ASPECT_FIT
-                            else RendererCommon.ScalingType.SCALE_ASPECT_FILL
-                        )
-                    }
-                )
+                            },
+                        contentScale = if (isFitMode) ContentScale.Fit else ContentScale.Crop
+                    )
+                }
 
-                // Connecting overlay if stream is not ready yet
+                // Connecting overlay
                 if (!isStreamReady) {
                     Box(
                         modifier = Modifier
@@ -122,7 +129,7 @@ fun RemoteDesktopScreen(
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "Establishing secure WebRTC stream & inputs",
+                                text = "Establishing desktop stream",
                                 color = TextSecondary,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -152,22 +159,21 @@ fun RemoteDesktopScreen(
                             Box(
                                 modifier = Modifier
                                     .size(10.dp)
-                                    .background(StatusOnline, shape = CircleShape)
+                                    .background(if (isStreamReady) StatusOnline else StatusWarning, shape = CircleShape)
                             )
                             Text(
                                 text = deviceName,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = TextPrimary
                             )
-                            Text(
-                                text = "•",
-                                color = TextSecondary
-                            )
-                            Text(
-                                text = "${latencyMs}ms",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = StatusOnline
-                            )
+                            if (isStreamReady) {
+                                Text(text = "•", color = TextSecondary)
+                                Text(
+                                    text = "LIVE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = StatusOnline
+                                )
+                            }
                         }
                     }
 
@@ -185,7 +191,7 @@ fun RemoteDesktopScreen(
                     }
                 }
 
-                // Bottom Controls Layout (Keyboard / Touchpad / Toolbar)
+                // Bottom Controls Layout
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -193,74 +199,78 @@ fun RemoteDesktopScreen(
                 ) {
                     // Virtual Touchpad if active
                     if (isTouchpadMode) {
-                        VirtualTouchpad { msg ->
-                            webRtcClient.sendInputMessage(msg)
-                        }
+                        VirtualTouchpad(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp),
+                            sendInput = { msg: String -> webRtcClient.sendInputMessage(msg) }
+                        )
                     }
 
-                    // On-Screen Keyboard if active
+                    // On-Screen Keyboard
                     if (isKeyboardVisible) {
-                        OnScreenKeyboardBar { msg ->
-                            webRtcClient.sendInputMessage(msg)
-                        }
+                        OnScreenKeyboardBar(
+                            modifier = Modifier.fillMaxWidth(),
+                            sendInput = { msg: String -> webRtcClient.sendInputMessage(msg) }
+                        )
                     }
 
-                    // Compact Floating Toolbar
+                    // Compact Toolbar
                     Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(60.dp),
-                        color = CharcoalSurface.copy(alpha = 0.95f),
+                        modifier = Modifier.fillMaxWidth(),
+                        color = CharcoalSurface.copy(alpha = 0.9f),
                         tonalElevation = 8.dp
                     ) {
                         Row(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 16.dp),
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Toggle Keyboard
-                            IconButton(onClick = { isKeyboardVisible = !isKeyboardVisible }) {
-                                Icon(
-                                    imageVector = Icons.Default.Keyboard,
-                                    contentDescription = "Keyboard",
-                                    tint = if (isKeyboardVisible) ElectricBluePrimary else TextSecondary
-                                )
-                            }
-
-                            // Toggle Touchpad / Direct Mode
+                            // Touchpad toggle
                             IconButton(onClick = { isTouchpadMode = !isTouchpadMode }) {
                                 Icon(
-                                    imageVector = if (isTouchpadMode) Icons.Default.TouchApp else Icons.Default.Mouse,
-                                    contentDescription = "Touchpad",
+                                    imageVector = Icons.Default.TouchApp,
+                                    contentDescription = "Toggle Touchpad",
                                     tint = if (isTouchpadMode) ElectricBluePrimary else TextSecondary
                                 )
                             }
 
-                            // Toggle Aspect Ratio Fit/Fill
+                            // Keyboard toggle
+                            IconButton(onClick = { isKeyboardVisible = !isKeyboardVisible }) {
+                                Icon(
+                                    imageVector = Icons.Default.Keyboard,
+                                    contentDescription = "Toggle Keyboard",
+                                    tint = if (isKeyboardVisible) ElectricBluePrimary else TextSecondary
+                                )
+                            }
+
+                            // Fit/Fill toggle
                             IconButton(onClick = { isFitMode = !isFitMode }) {
                                 Icon(
                                     imageVector = if (isFitMode) Icons.Default.FitScreen else Icons.Default.Fullscreen,
-                                    contentDescription = "Aspect Ratio",
+                                    contentDescription = "Toggle Fit/Fill",
                                     tint = TextSecondary
                                 )
                             }
 
-                            // Sync Phone Clipboard to Windows
+                            // Clipboard paste
                             IconButton(onClick = {
-                                val clipData = clipboardManager.primaryClip
-                                if (clipData != null && clipData.itemCount > 0) {
-                                    val text = clipData.getItemAt(0).text.toString()
-                                    webRtcClient.sendInputMessage(InputEventProtocol.serializeClipboardSync(text))
-                                    Toast.makeText(context, "Clipboard synced to PC", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+                                val clip = clipboardManager.primaryClip
+                                if (clip != null && clip.itemCount > 0) {
+                                    val text = clip.getItemAt(0).text?.toString()
+                                    if (!text.isNullOrEmpty()) {
+                                        webRtcClient.sendInputMessage(
+                                            "{\"type\":\"text_input\",\"text\":\"${text.replace("\"", "\\\"").replace("\n", "\\n")}\"}"
+                                        )
+                                        Toast.makeText(context, "Pasted to laptop", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             }) {
                                 Icon(
                                     imageVector = Icons.Default.ContentPaste,
-                                    contentDescription = "Clipboard Sync",
+                                    contentDescription = "Paste Clipboard",
                                     tint = TextSecondary
                                 )
                             }

@@ -26,6 +26,7 @@ class SignalingClient(
     var onAnswerReceived: ((sdp: String) -> Unit)? = null
     var onIceCandidateReceived: ((candidate: String) -> Unit)? = null
     var onSessionTerminated: ((reason: String) -> Unit)? = null
+    var onDesktopFrameReceived: ((data: String) -> Unit)? = null
     var onDeviceStatusUpdate: ((deviceId: String, status: String) -> Unit)? = null
 
     fun connect() {
@@ -72,6 +73,10 @@ class SignalingClient(
                         "session_terminated" -> {
                             val reason = jObj.get("reason")?.asString ?: "Session ended"
                             onSessionTerminated?.invoke(reason)
+                        }
+                        "desktop_frame" -> {
+                            val data = jObj.get("data")?.asString ?: ""
+                            onDesktopFrameReceived?.invoke(data)
                         }
                         "device_status_update" -> {
                             val devId = jObj.get("device_id")?.asString ?: ""
@@ -140,6 +145,10 @@ class SignalingClient(
             addProperty("reason", reason)
         }
         send(msg.toString())
+    }
+
+    fun sendRaw(json: String) {
+        send(json)
     }
 
     private fun send(json: String) {

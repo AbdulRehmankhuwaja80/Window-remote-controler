@@ -27,6 +27,8 @@ class WebRtcClient(
         }
     var onConnectionStateChange: ((PeerConnection.PeerConnectionState) -> Unit)? = null
     var onMessageReceived: ((String) -> Unit)? = null
+    var onFrameReceived: ((ByteArray) -> Unit)? = null
+    var sendInputViaSignaling: ((String) -> Unit)? = null
 
     init {
         initFactory()
@@ -196,6 +198,8 @@ class WebRtcClient(
             val bytes = json.toByteArray(StandardCharsets.UTF_8)
             val buffer = DataChannel.Buffer(ByteBuffer.wrap(bytes), false)
             dataChannel?.send(buffer)
+        } else {
+            sendInputViaSignaling?.invoke(json)
         }
     }
 

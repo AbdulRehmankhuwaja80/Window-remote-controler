@@ -1,6 +1,7 @@
 package com.remodesk.client
 
 import android.os.Bundle
+import android.util.Base64
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -105,7 +106,6 @@ class MainActivity : ComponentActivity() {
                                 deviceId = devId,
                                 deviceName = devName,
                                 webRtcClient = rtc,
-                                eglBase = eglBase,
                                 onDisconnect = {
                                     signalingClient?.endSession(devId)
                                     rtc.close()
@@ -208,6 +208,21 @@ class MainActivity : ComponentActivity() {
 
                 rtc.onIceCandidateGenerated = { candJson ->
                     sig.sendIceCandidate(sessionResp.sessionId, candJson)
+                }
+
+                // Connect frame reception from signaling to WebRtcClient
+                sig.onDesktopFrameReceived = { base64Data ->
+                    try {
+                        val jpegBytes = Base64.decode(base64Data, Base64.DEFAULT)
+                        rtc.onFrameReceived?.invoke(jpegBytes)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                // Connect input sending from WebRtcClient to signaling fallback
+                rtc.sendInputViaSignaling = { json ->
+                    sig.sendRaw(json)
                 }
 
                 sig.connect()

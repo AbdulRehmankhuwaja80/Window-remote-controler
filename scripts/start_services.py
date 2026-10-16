@@ -39,19 +39,19 @@ if not backend_healthy:
     print("ERROR: Backend did not start in time!")
     sys.exit(1)
 
-# Now start C# Host Agent
-csharp_host_exe = os.path.abspath(r"windows-host\RemoDesk.Host\bin\Debug\net8.0-windows10.0.19041.0\RemoDesk.Host.exe")
-if os.path.exists(csharp_host_exe):
-    print(f"\n=== STARTING C# HOST AGENT: {csharp_host_exe} ===")
+# Now start Python Host Agent
+python_host_script = os.path.abspath(r"windows-host\python-host\host_agent.py")
+if os.path.exists(python_host_script):
+    print(f"\n=== STARTING PYTHON HOST AGENT: {python_host_script} ===")
     host_proc = subprocess.Popen(
-        [csharp_host_exe],
-        cwd=os.path.dirname(csharp_host_exe),
+        [os.path.abspath("backend_venv/Scripts/python.exe"), python_host_script],
+        cwd=os.path.abspath("."),
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS if os.name == 'nt' else 0,
         close_fds=True
     )
-    print(f"C# Host Agent spawned (PID: {host_proc.pid})")
+    print(f"Python Host Agent spawned (PID: {host_proc.pid})")
 else:
-    print(f"Warning: {csharp_host_exe} not found!")
+    print(f"Warning: {python_host_script} not found!")
 
 # Check backend health again to see active_hosts
 time.sleep(3)

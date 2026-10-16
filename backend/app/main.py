@@ -252,6 +252,17 @@ async def websocket_signaling(
                         "reason": reason,
                     })
 
+            # Generic session message forwarding (desktop_frame, mouse, keyboard, etc.)
+            else:
+                if role == "host" and host_id:
+                    fwd_sid = manager.host_to_session.get(host_id)
+                    if fwd_sid and fwd_sid in manager.sessions:
+                        await manager.send_to_client(manager.sessions[fwd_sid]["client_id"], data)
+                elif role == "client" and client_id:
+                    fwd_sid = manager.client_to_session.get(client_id)
+                    if fwd_sid and fwd_sid in manager.sessions:
+                        await manager.send_to_host(manager.sessions[fwd_sid]["host_id"], data)
+
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: {role} (host_id={host_id}, client_id={client_id})")
     except Exception as e:
