@@ -20,7 +20,9 @@ namespace RemoDesk.Host.Signaling
         public event Action<string, string>? OnAnswerReceived; // sessionId, sdp
         public event Action<string, string>? OnCandidateReceived; // sessionId, candidate
         public event Action<string, string>? OnSessionTerminated; // sessionId, reason
+        public event Action<string>? OnInputMessageReceived; // json input from client
         public event Action<bool>? OnConnectionStateChanged; // isConnected
+
 
         public bool IsConnected => _ws?.State == WebSocketState.Open;
 
@@ -162,6 +164,16 @@ namespace RemoDesk.Host.Signaling
                             jObj.Value<string>("reason") ?? "Terminated"
                         );
                         break;
+
+                    case "mouse_move":
+                    case "mouse_delta":
+                    case "mouse_button":
+                    case "mouse_scroll":
+                    case "key_event":
+                    case "text_input":
+                    case "clipboard_sync":
+                        OnInputMessageReceived?.Invoke(messageJson);
+                        break;
                 }
             }
             catch (Exception ex)
@@ -177,6 +189,16 @@ namespace RemoDesk.Host.Signaling
             byte[] bytes = Encoding.UTF8.GetBytes(json);
             await _ws!.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
         }
+
+        public async Task SendDesktopFrameAsync(string base64Data)
+        {
+            await SendMessageAsync(new
+            {
+                type = "desktop_frame",
+                data = base64Data,
+            });
+        }
+
 
         public async Task AcceptSessionAsync(string sessionId, string clientId)
         {

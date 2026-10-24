@@ -34,6 +34,12 @@ interface ApiService {
     @DELETE("/api/devices/{id}")
     suspend fun deleteDevice(@Path("id") deviceId: String)
 
+    @POST("/api/devices/pair")
+    suspend fun pairDevice(
+        @Query("pairing_code") pairingCode: String? = null,
+        @Body body: Map<String, String>? = null
+    ): Device
+
     @GET("/api/sessions/ice-servers")
     suspend fun getIceServers(): WebRtcConfig
 

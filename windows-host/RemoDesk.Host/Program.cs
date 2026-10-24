@@ -47,6 +47,21 @@ namespace RemoDesk.Host
 
             var mainForm = new HostControlForm(settings, signaling, authorizer);
 
+            var dataChannelProtocol = new DataChannelProtocol(inputInjector, () => !authorizer.IsPaused);
+
+            signaling.OnInputMessageReceived += (msgJson) =>
+            {
+                dataChannelProtocol.HandleMessage(msgJson);
+            };
+
+            rtcManager.OnFrameDataReady += async (base64) =>
+            {
+                if (signaling.IsConnected && !string.IsNullOrEmpty(rtcManager.CurrentSessionId))
+                {
+                    await signaling.SendDesktopFrameAsync(base64);
+                }
+            };
+
             // Connect Signaling events to WebRTC Session Manager
             signaling.OnSessionRequested += async (sessionId, clientId, clientInfo) =>
             {
@@ -55,6 +70,7 @@ namespace RemoDesk.Host
                 {
                     await signaling.AcceptSessionAsync(sessionId, clientId);
                     mainForm.SetSessionActive(true, clientInfo);
+                    rtcManager.StartStreaming();
                 }
                 else
                 {
@@ -108,6 +124,7 @@ namespace RemoDesk.Host
                     rtcManager.StopStreaming();
                 }
             };
+
 
             Application.Run(mainForm);
         }

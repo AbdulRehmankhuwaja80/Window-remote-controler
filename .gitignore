@@ -26,3 +26,5 @@ local.properties
 
 # Binary Archives
 Apk/*.zip
+cloudflared.exe
+*.log

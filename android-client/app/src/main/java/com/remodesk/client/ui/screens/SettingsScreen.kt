@@ -29,7 +29,7 @@ fun SettingsScreen(
     var sensitivity by remember { mutableStateOf(tokenManager.touchpadSensitivity) }
     var biometricEnabled by remember { mutableStateOf(tokenManager.isBiometricEnabled) }
     var serverUrl by remember { mutableStateOf(tokenManager.serverUrl) }
-    var selectedQuality by remember { mutableStateOf("Balanced (1080p / 30fps)") }
+    var selectedQuality by remember { mutableStateOf(tokenManager.streamingQuality) }
 
     Scaffold(
         topBar = {
@@ -93,7 +93,10 @@ fun SettingsScreen(
                         ) {
                             RadioButton(
                                 selected = (selectedQuality == opt),
-                                onClick = { selectedQuality = opt },
+                                onClick = {
+                                    selectedQuality = opt
+                                    tokenManager.streamingQuality = opt
+                                },
                                 colors = RadioButtonDefaults.colors(selectedColor = ElectricBluePrimary)
                             )
                             Spacer(modifier = Modifier.width(8.dp))

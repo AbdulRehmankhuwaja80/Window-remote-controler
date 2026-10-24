@@ -175,7 +175,18 @@ class MainActivity : ComponentActivity() {
                 signalingClient = sig
 
                 sig.onConnected = {
-                    sig.requestSession(device.id, sessionResp.sessionId)
+                    val dm = resources.displayMetrics
+                    val phoneWidth = maxOf(dm.widthPixels, dm.heightPixels)
+                    val phoneHeight = minOf(dm.widthPixels, dm.heightPixels)
+                    val quality = tokenManager.streamingQuality
+                    sig.requestSession(
+                        deviceId = device.id,
+                        sessionId = sessionResp.sessionId,
+                        clientInfo = "Android Mobile (${phoneWidth}x${phoneHeight})",
+                        width = phoneWidth,
+                        height = phoneHeight,
+                        quality = quality
+                    )
                 }
 
                 sig.onSessionAccepted = { sessId ->

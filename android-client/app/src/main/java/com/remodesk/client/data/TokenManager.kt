@@ -44,6 +44,10 @@ class TokenManager(context: Context) {
         get() = prefs.getBoolean(KEY_BIOMETRIC, false)
         set(value) = prefs.edit().putBoolean(KEY_BIOMETRIC, value).apply()
 
+    var streamingQuality: String
+        get() = prefs.getString(KEY_STREAMING_QUALITY, "Balanced (1080p / 30fps)") ?: "Balanced (1080p / 30fps)"
+        set(value) = prefs.edit().putString(KEY_STREAMING_QUALITY, value).apply()
+
     fun clear() {
         prefs.edit().clear().apply()
     }
@@ -54,5 +58,6 @@ class TokenManager(context: Context) {
         private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_TOUCHPAD_SENSITIVITY = "touchpad_sensitivity"
         private const val KEY_BIOMETRIC = "biometric_enabled"
+        private const val KEY_STREAMING_QUALITY = "streaming_quality"
     }
 }

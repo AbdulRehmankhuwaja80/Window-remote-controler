@@ -41,6 +41,10 @@ fun DashboardScreen(
     var isLoading by remember { mutableStateOf(true) }
     var deviceToRename by remember { mutableStateOf<Device?>(null) }
     var newDeviceName by remember { mutableStateOf("") }
+    var showPairDialog by remember { mutableStateOf(false) }
+    var partnerIdInput by remember { mutableStateOf("") }
+    var pinInput by remember { mutableStateOf("") }
+    var isPairing by remember { mutableStateOf(false) }
 
     fun refreshDevices() {
         isLoading = true
@@ -87,6 +91,15 @@ fun DashboardScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CharcoalSurface)
             )
         },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showPairDialog = true },
+                containerColor = ElectricBluePrimary,
+                contentColor = Color.White
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Link Partner Laptop")
+            }
+        },
         containerColor = DarkNavyBackground
     ) { padding ->
         Box(
@@ -114,23 +127,37 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "No Laptops Registered Yet",
+                            text = "No Laptops Linked Yet",
                             style = MaterialTheme.typography.titleMedium,
                             color = TextPrimary
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Install and start the RemoDesk Windows Host on your laptop to link it to your account.",
+                            text = "Start RemoDesk on your laptop and enter the 6-digit PIN shown on your screen to connect.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
                         Button(
-                            onClick = { refreshDevices() },
-                            colors = ButtonDefaults.buttonColors(containerColor = ElectricBluePrimary)
+                            onClick = { showPairDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = ElectricBluePrimary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth(0.8f)
                         ) {
-                            Text("Check Again")
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Link Laptop (Enter PIN)")
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = { refreshDevices() },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth(0.8f)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Refresh List")
                         }
                     }
                 }
@@ -202,6 +229,97 @@ fun DashboardScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    // TeamViewer-style Pairing Dialog
+    if (showPairDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isPairing) showPairDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.LaptopWindows, contentDescription = null, tint = ElectricBluePrimary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Link Partner Laptop", fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        "Enter the Partner ID and 6-digit PIN shown on your laptop screen (like TeamViewer) to save it as your go-to device.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = partnerIdInput,
+                        onValueChange = { partnerIdInput = it.take(40) },
+                        label = { Text("Partner ID (e.g. Laptop Name)") },
+                        placeholder = { Text("e.g. LAPTOP-4A9AUPQS") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = ElectricBluePrimary,
+                            unfocusedBorderColor = CharcoalSurfaceVariant
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = pinInput,
+                        onValueChange = { pinInput = it.take(10) },
+                        label = { Text("One-Time PIN (6 digits)") },
+                        placeholder = { Text("e.g. 467008") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = ElectricBluePrimary,
+                            unfocusedBorderColor = CharcoalSurfaceVariant
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val pid = partnerIdInput.trim()
+                        val pin = pinInput.trim()
+                        if (pin.isEmpty()) return@Button
+                        isPairing = true
+                        coroutineScope.launch {
+                            try {
+                                val api = ApiService.create(tokenManager.serverUrl, tokenManager)
+                                val body = mutableMapOf("pin" to pin)
+                                if (pid.isNotEmpty()) {
+                                    body["partner_id"] = pid
+                                }
+                                val dev = api.pairDevice(pairingCode = pin, body = body)
+                                Toast.makeText(context, "Linked ${dev.deviceName} successfully!", Toast.LENGTH_SHORT).show()
+                                showPairDialog = false
+                                partnerIdInput = ""
+                                pinInput = ""
+                                refreshDevices()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Pairing failed: ${e.message}", Toast.LENGTH_LONG).show()
+                            } finally {
+                                isPairing = false
+                            }
+                        }
+                    },
+                    enabled = !isPairing && pinInput.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricBluePrimary)
+                ) {
+                    Text(if (isPairing) "Linking..." else "Link Laptop")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPairDialog = false },
+                    enabled = !isPairing
+                ) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = CharcoalSurface
         )
     }
 }

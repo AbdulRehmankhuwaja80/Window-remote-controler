@@ -6,8 +6,9 @@ echo ========================================================
 echo.
 cd /d "%~dp0"
 
-echo [1/2] Starting RemoDesk Gateway & Signaling Server...
+echo [1/2] Starting RemoDesk Gateway and Signaling Server...
 python scripts\start_services.py
+
 
 echo.
 echo ========================================================

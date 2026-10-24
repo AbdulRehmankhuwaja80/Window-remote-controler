@@ -158,14 +158,23 @@ async def websocket_signaling(
                     }))
                     continue
 
-                # Forward request to the host
+                # Forward request to the host with dynamic display & quality metrics
                 await manager.send_to_host(target_device_id, {
                     "type": "incoming_session_request",
                     "session_id": session_id,
                     "client_id": client_id,
                     "user_id": user_id,
                     "client_info": data.get("client_info", "Android Client"),
+                    "width": data.get("width"),
+                    "height": data.get("height"),
+                    "quality": data.get("quality"),
                 })
+
+            elif msg_type == "set_quality":
+                sess_id = data.get("session_id")
+                sess = manager.sessions.get(sess_id)
+                if sess:
+                    await manager.send_to_host(sess["host_id"], data)
 
             # Session Response from Host
             elif msg_type == "session_response":

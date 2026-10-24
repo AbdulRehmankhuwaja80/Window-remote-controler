@@ -101,12 +101,22 @@ class SignalingClient(
         })
     }
 
-    fun requestSession(deviceId: String, sessionId: String, clientInfo: String = "Android Mobile") {
+    fun requestSession(
+        deviceId: String,
+        sessionId: String,
+        clientInfo: String = "Android Mobile",
+        width: Int = 1920,
+        height: Int = 1080,
+        quality: String = "Balanced (1080p / 30fps)"
+    ) {
         val msg = JsonObject().apply {
             addProperty("type", "session_request")
             addProperty("target_device_id", deviceId)
             addProperty("session_id", sessionId)
             addProperty("client_info", clientInfo)
+            addProperty("width", width)
+            addProperty("height", height)
+            addProperty("quality", quality)
         }
         send(msg.toString())
     }

@@ -10,11 +10,14 @@ try:
 except Exception as e:
     print("Backend unreachable on 127.0.0.1:8000:", e)
 
+import socket
 try:
-    with urllib.request.urlopen('http://192.168.0.44:8000/health', timeout=3) as r:
-        print("Backend response on 192.168.0.44:8000:", r.read().decode())
+    lan_ip = socket.gethostbyname(socket.gethostname())
+    with urllib.request.urlopen(f'http://{lan_ip}:8000/health', timeout=3) as r:
+        print(f"Backend response on LAN ({lan_ip}:8000):", r.read().decode())
 except Exception as e:
-    print("Backend unreachable on 192.168.0.44:8000:", e)
+    print(f"Backend unreachable on LAN IP ({lan_ip if 'lan_ip' in locals() else 'unknown'}):", e)
+
 
 print("\n=== CHECKING PROCESSES (TASKLIST) ===")
 res = subprocess.run(['tasklist'], capture_output=True, text=True)

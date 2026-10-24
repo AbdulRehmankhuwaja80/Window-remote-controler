@@ -50,6 +50,12 @@ class DeviceUpdateRequest(BaseModel):
     status: Optional[str] = None
 
 
+class PairDeviceRequest(BaseModel):
+    pairing_code: Optional[str] = None
+    partner_id: Optional[str] = None
+    pin: Optional[str] = None
+
+
 class DeviceOut(BaseModel):
     id: str
     user_id: str

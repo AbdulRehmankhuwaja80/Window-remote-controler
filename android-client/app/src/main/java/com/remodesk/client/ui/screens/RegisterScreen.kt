@@ -40,7 +40,9 @@ fun RegisterScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var serverUrl by remember { mutableStateOf(tokenManager.serverUrl) }
     var isLoading by remember { mutableStateOf(false) }
+
 
     Scaffold(
         topBar = {
@@ -126,7 +128,26 @@ fun RegisterScreen(
                 )
             )
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+
+            OutlinedTextField(
+                value = serverUrl,
+                onValueChange = {
+                    serverUrl = it
+                    tokenManager.serverUrl = it
+                },
+                label = { Text("Gateway Server URL") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = CyanSecondary,
+                    unfocusedBorderColor = CharcoalSurfaceVariant
+                )
+            )
+
             Spacer(modifier = Modifier.height(28.dp))
+
 
             Button(
                 onClick = {
@@ -141,7 +162,8 @@ fun RegisterScreen(
                     isLoading = true
                     coroutineScope.launch {
                         try {
-                            val api = ApiService.create(tokenManager.serverUrl, tokenManager)
+                            val api = ApiService.create(serverUrl, tokenManager)
+
                             val resp = api.register(mapOf(
                                 "email" to email.trim(),
                                 "password" to password,

@@ -5,9 +5,16 @@ echo ========================================================
 
 cd /d "%~dp0\.."
 
+if not exist "backend_venv\Scripts\python.exe" (
+    echo [INFO] Creating Python virtual environment...
+    python -m venv backend_venv
+    backend_venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+)
+
 echo.
 echo [1/3] Running Backend and E2E Signaling Tests (Pytest)...
 backend_venv\Scripts\python.exe -m pytest -o asyncio_mode=auto backend\tests
+
 if %errorlevel% neq 0 (
     echo [ERROR] Backend tests failed.
     exit /b %errorlevel%
