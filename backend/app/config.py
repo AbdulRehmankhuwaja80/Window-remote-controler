@@ -11,7 +11,11 @@ class Settings(BaseSettings):
     # Security & Auth
     SECRET_KEY: str = os.getenv("SECRET_KEY", "remodesk-ultra-secure-signaling-jwt-secret-key-32chars-min")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # Short-lived access token (15 mins)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7     # Refresh token lifetime (7 days)
+    VERIFICATION_CODE_EXPIRE_MINUTES: int = 60
+    RESET_TOKEN_EXPIRE_MINUTES: int = 30
+    AUTO_VERIFY_NEW_USERS: bool = os.getenv("AUTO_VERIFY_NEW_USERS", "false").lower() in ("true", "1")
 
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./remodesk.db")

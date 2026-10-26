@@ -3,8 +3,8 @@ package com.remodesk.client
 import android.os.Bundle
 import android.util.Base64
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.runtime.*
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -23,7 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.webrtc.EglBase
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private lateinit var tokenManager: TokenManager
     private val eglBase: EglBase by lazy { EglBase.create() }
@@ -83,6 +83,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onLogout = {
                                 tokenManager.authToken = null
+                                tokenManager.refreshToken = null
                                 navController.navigate("login") {
                                     popUpTo("dashboard") { inclusive = true }
                                 }
@@ -106,6 +107,21 @@ class MainActivity : ComponentActivity() {
                                 deviceId = devId,
                                 deviceName = devName,
                                 webRtcClient = rtc,
+                                signalingClient = signalingClient,
+                                tokenManager = tokenManager,
+                                onReconnect = {
+                                    val dev = Device(
+                                        id = devId,
+                                        deviceName = devName,
+                                        hostname = null,
+                                        osInfo = "Windows",
+                                        status = "ONLINE",
+                                        isRemoteEnabled = true,
+                                        ipAddress = null,
+                                        lastSeen = "Just now"
+                                    )
+                                    initiateRemoteSession(dev)
+                                },
                                 onDisconnect = {
                                     signalingClient?.endSession(devId)
                                     rtc.close()
@@ -130,7 +146,7 @@ class MainActivity : ComponentActivity() {
                         val devId = backStackEntry.arguments?.getString("deviceId") ?: ""
                         val devName = backStackEntry.arguments?.getString("deviceName") ?: "Windows PC"
 
-                        val mockDev = Device(
+                        val targetDev = Device(
                             id = devId,
                             deviceName = devName,
                             hostname = null,
@@ -140,7 +156,12 @@ class MainActivity : ComponentActivity() {
                             ipAddress = null,
                             lastSeen = "Just now"
                         )
-                        FileTransferScreen(device = mockDev, onNavigateBack = { navController.popBackStack() })
+                        FileTransferScreen(
+                            device = targetDev,
+                            tokenManager = tokenManager,
+                            signalingClient = signalingClient,
+                            onNavigateBack = { navController.popBackStack() }
+                        )
                     }
 
                     composable("settings") {

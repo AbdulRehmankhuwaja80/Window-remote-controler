@@ -23,6 +23,23 @@ async def test_full_remote_desktop_signaling_lifecycle():
         })
         assert reg.status_code in [201, 400]
 
+        # 1.5 Verify Email
+        from sqlalchemy import select
+        from backend.app.database import async_session_maker
+        from backend.app.models import User
+        async with async_session_maker() as session:
+            stmt = select(User).where(User.email == email)
+            res = await session.execute(stmt)
+            u = res.scalar_one_or_none()
+            if u and not u.is_verified:
+                if not u.verification_code:
+                    resend = await ac.post("/api/auth/resend-verification", json={"email": email})
+                    assert resend.status_code == 200
+                    await session.refresh(u)
+                v_code = u.verification_code
+                v_resp = await ac.post("/api/auth/verify-email", json={"email": email, "code": v_code})
+                assert v_resp.status_code == 200
+
         # 2. Login
         login = await ac.post("/api/auth/login", json={
             "email": email,

@@ -1,5 +1,6 @@
 package com.remodesk.client.ui.screens
 
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.BitmapFactory
@@ -25,9 +26,24 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.remodesk.client.data.TokenManager
+import com.remodesk.client.network.SignalingClient
 import com.remodesk.client.ui.theme.*
 import com.remodesk.client.webrtc.InputEventProtocol
 import com.remodesk.client.webrtc.WebRtcClient
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.webrtc.PeerConnection
+import java.nio.charset.StandardCharsets
+
+enum class SessionConnectionState {
+    CONNECTING,
+    CONNECTED,
+    RECONNECTING,
+    PAUSED,
+    DISCONNECTED,
+    FAILED
+}
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -35,19 +51,31 @@ fun RemoteDesktopScreen(
     deviceId: String,
     deviceName: String,
     webRtcClient: WebRtcClient,
+    signalingClient: SignalingClient? = null,
+    tokenManager: TokenManager? = null,
+    onReconnect: (() -> Unit)? = null,
     onDisconnect: () -> Unit
 ) {
     val context = LocalContext.current
-    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clipboardManager = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
+    val coroutineScope = rememberCoroutineScope()
+
+    var connectionState by remember { mutableStateOf(SessionConnectionState.CONNECTING) }
+    var reconnectAttempts by remember { mutableIntStateOf(0) }
+    var reconnectCountdown by remember { mutableIntStateOf(0) }
+    var statusMessage by remember { mutableStateOf("Connecting to $deviceName...") }
 
     var isTouchpadMode by remember { mutableStateOf(false) }
     var isKeyboardVisible by remember { mutableStateOf(false) }
     var isFitMode by remember { mutableStateOf(true) }
-    var latencyMs by remember { mutableStateOf(0L) }
-    var zoomScale by remember { mutableStateOf(1.0f) }
-    var isStreamReady by remember { mutableStateOf(false) }
+    var latencyMs by remember { mutableLongStateOf(0L) }
+    var zoomScale by remember { mutableFloatStateOf(1.0f) }
     var currentFrame by remember { mutableStateOf<ImageBitmap?>(null) }
     var frameCount by remember { mutableIntStateOf(0) }
+
+    val maxReconnect = tokenManager?.maxReconnectAttempts ?: 5
+    val autoReconnect = tokenManager?.autoReconnect ?: true
+    val reconnectTimeout = tokenManager?.reconnectTimeoutSeconds ?: 30
 
     val gestureHandler = remember {
         TouchGestureHandler(context) { msg ->
@@ -55,24 +83,101 @@ fun RemoteDesktopScreen(
         }
     }
 
-    // Wire up frame receiving
-    DisposableEffect(webRtcClient) {
+    fun triggerReconnectFlow() {
+        if (!autoReconnect || reconnectAttempts >= maxReconnect) {
+            connectionState = SessionConnectionState.FAILED
+            statusMessage = "Connection failed after $reconnectAttempts attempts."
+            return
+        }
+
+        reconnectAttempts++
+        connectionState = SessionConnectionState.RECONNECTING
+        val backoffSeconds = minOf(1 shl (reconnectAttempts - 1), reconnectTimeout)
+        reconnectCountdown = backoffSeconds
+        statusMessage = "Reconnecting in ${backoffSeconds}s (attempt $reconnectAttempts of $maxReconnect)..."
+
+        coroutineScope.launch {
+            for (sec in backoffSeconds downTo 1) {
+                reconnectCountdown = sec
+                statusMessage = "Reconnecting in ${sec}s (attempt $reconnectAttempts of $maxReconnect)..."
+                delay(1000L)
+            }
+            onReconnect?.invoke()
+        }
+    }
+
+    // Monitor Incoming frames, peer connection state & signaling
+    DisposableEffect(webRtcClient, signalingClient) {
         val startTime = System.currentTimeMillis()
+
         webRtcClient.onFrameReceived = { jpegBytes ->
             try {
                 val bmp = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
                 if (bmp != null) {
                     currentFrame = bmp.asImageBitmap()
-                    if (!isStreamReady) isStreamReady = true
+                    if (connectionState != SessionConnectionState.CONNECTED) {
+                        connectionState = SessionConnectionState.CONNECTED
+                        reconnectAttempts = 0
+                    }
                     frameCount++
-                    latencyMs = (System.currentTimeMillis() - startTime) / maxOf(frameCount, 1).toLong()
+                    latencyMs = ((System.currentTimeMillis() - startTime) / maxOf(frameCount, 1)).coerceAtLeast(12L)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
+
+        webRtcClient.onConnectionStateChange = { pcState ->
+            coroutineScope.launch {
+                when (pcState) {
+                    PeerConnection.PeerConnectionState.CONNECTED -> {
+                        connectionState = SessionConnectionState.CONNECTED
+                        reconnectAttempts = 0
+                    }
+                    PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                        triggerReconnectFlow()
+                    }
+                    PeerConnection.PeerConnectionState.FAILED -> {
+                        triggerReconnectFlow()
+                    }
+                    PeerConnection.PeerConnectionState.CLOSED -> {
+                        connectionState = SessionConnectionState.DISCONNECTED
+                    }
+                    else -> {}
+                }
+            }
+        }
+
+        signalingClient?.onSessionTerminated = { reason ->
+            coroutineScope.launch {
+                if (reason.contains("pause", ignoreCase = true)) {
+                    connectionState = SessionConnectionState.PAUSED
+                    statusMessage = "Remote control paused by host laptop."
+                } else {
+                    connectionState = SessionConnectionState.DISCONNECTED
+                    statusMessage = "Session terminated: $reason"
+                }
+            }
+        }
+
+        // Incoming Clipboard Sync from Windows Host
+        signalingClient?.onClipboardReceived = { text ->
+            coroutineScope.launch {
+                if (text.isNotEmpty()) {
+                    val clip = ClipData.newPlainText("RemoDesk", text)
+                    clipboardManager.setPrimaryClip(clip)
+                    Toast.makeText(context, "Clipboard synced from laptop (${text.length} chars)", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
         onDispose {
             webRtcClient.onFrameReceived = null
+            webRtcClient.onConnectionStateChange = null
+            if (signalingClient != null) {
+                signalingClient.onSessionTerminated = null
+                signalingClient.onClipboardReceived = null
+            }
         }
     }
 
@@ -88,11 +193,11 @@ fun RemoteDesktopScreen(
                 if (currentFrame != null) {
                     Image(
                         bitmap = currentFrame!!,
-                        contentDescription = "Remote Desktop",
+                        contentDescription = "Remote Desktop Stream",
                         modifier = Modifier
                             .fillMaxSize()
                             .pointerInteropFilter { motionEvent ->
-                                if (!isTouchpadMode) {
+                                if (!isTouchpadMode && connectionState == SessionConnectionState.CONNECTED) {
                                     val width = context.resources.displayMetrics.widthPixels.toFloat()
                                     val height = context.resources.displayMetrics.heightPixels.toFloat()
                                     gestureHandler.handleTouchEvent(motionEvent, width, height) { factor ->
@@ -106,33 +211,68 @@ fun RemoteDesktopScreen(
                     )
                 }
 
-                // Connecting overlay
-                if (!isStreamReady) {
+                // Overlay for non-connected states (CONNECTING, RECONNECTING, PAUSED, FAILED, DISCONNECTED)
+                if (connectionState != SessionConnectionState.CONNECTED) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(DarkNavyBackground),
+                            .background(DarkNavyBackground.copy(alpha = if (currentFrame != null) 0.85f else 1.0f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = CharcoalSurface)
                         ) {
-                            CircularProgressIndicator(
-                                color = ElectricBluePrimary,
-                                modifier = Modifier.size(52.dp),
-                                strokeWidth = 4.dp
-                            )
-                            Text(
-                                text = "Connecting to $deviceName...",
-                                color = TextPrimary,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = "Establishing desktop stream",
-                                color = TextSecondary,
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .padding(24.dp)
+                                    .fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                when (connectionState) {
+                                    SessionConnectionState.CONNECTING -> {
+                                        CircularProgressIndicator(color = ElectricBluePrimary, modifier = Modifier.size(48.dp))
+                                        Text("Connecting to $deviceName...", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                                        Text("Negotiating WebRTC stream & STUN/TURN relays", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    SessionConnectionState.RECONNECTING -> {
+                                        CircularProgressIndicator(color = StatusWarning, modifier = Modifier.size(48.dp))
+                                        Text("Reconnecting...", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                                        Text(statusMessage, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    SessionConnectionState.PAUSED -> {
+                                        Icon(Icons.Default.PauseCircleOutline, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(54.dp))
+                                        Text("Remote Access Paused", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                                        Text("The laptop user has paused remote control access. Waiting for host to resume...", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    SessionConnectionState.FAILED -> {
+                                        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = StatusError, modifier = Modifier.size(54.dp))
+                                        Text("Connection Failed", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                                        Text("Could not reach $deviceName. Please check that host is running and connected.", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Button(
+                                            onClick = {
+                                                reconnectAttempts = 0
+                                                connectionState = SessionConnectionState.CONNECTING
+                                                onReconnect?.invoke()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = ElectricBluePrimary)
+                                        ) {
+                                            Text("Retry Connection")
+                                        }
+                                    }
+                                    SessionConnectionState.DISCONNECTED -> {
+                                        Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(54.dp))
+                                        Text("Session Ended", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                                        Text(statusMessage, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    else -> {}
+                                }
+                            }
                         }
                     }
                 }
@@ -148,7 +288,7 @@ fun RemoteDesktopScreen(
                     // Device & Latency Card
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = CharcoalSurface.copy(alpha = 0.85f),
+                        color = CharcoalSurface.copy(alpha = 0.88f),
                         tonalElevation = 4.dp
                     ) {
                         Row(
@@ -156,22 +296,36 @@ fun RemoteDesktopScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            val dotColor = when (connectionState) {
+                                SessionConnectionState.CONNECTED -> StatusOnline
+                                SessionConnectionState.CONNECTING -> ElectricBluePrimary
+                                SessionConnectionState.RECONNECTING -> StatusWarning
+                                SessionConnectionState.PAUSED -> StatusWarning
+                                SessionConnectionState.FAILED -> StatusError
+                                SessionConnectionState.DISCONNECTED -> TextSecondary
+                            }
                             Box(
                                 modifier = Modifier
                                     .size(10.dp)
-                                    .background(if (isStreamReady) StatusOnline else StatusWarning, shape = CircleShape)
+                                    .background(dotColor, shape = CircleShape)
                             )
                             Text(
                                 text = deviceName,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = TextPrimary
                             )
-                            if (isStreamReady) {
+                            if (connectionState == SessionConnectionState.CONNECTED) {
                                 Text(text = "•", color = TextSecondary)
                                 Text(
-                                    text = "LIVE",
+                                    text = "${latencyMs}ms",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = StatusOnline
+                                    color = if (latencyMs < 60) StatusOnline else StatusWarning
+                                )
+                            } else {
+                                Text(
+                                    text = "• ${connectionState.name}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = dotColor
                                 )
                             }
                         }
@@ -218,13 +372,13 @@ fun RemoteDesktopScreen(
                     // Compact Toolbar
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = CharcoalSurface.copy(alpha = 0.9f),
+                        color = CharcoalSurface.copy(alpha = 0.92f),
                         tonalElevation = 8.dp
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -255,23 +409,43 @@ fun RemoteDesktopScreen(
                                 )
                             }
 
-                            // Clipboard paste
+                            // Clipboard Paste with Strict Validation (max 64KB, text-only, confirmation)
                             IconButton(onClick = {
                                 val clip = clipboardManager.primaryClip
-                                if (clip != null && clip.itemCount > 0) {
-                                    val text = clip.getItemAt(0).text?.toString()
-                                    if (!text.isNullOrEmpty()) {
-                                        webRtcClient.sendInputMessage(
-                                            "{\"type\":\"text_input\",\"text\":\"${text.replace("\"", "\\\"").replace("\n", "\\n")}\"}"
-                                        )
-                                        Toast.makeText(context, "Pasted to laptop", Toast.LENGTH_SHORT).show()
-                                    }
+                                if (clip == null || clip.itemCount == 0) {
+                                    Toast.makeText(context, "Mobile clipboard is empty.", Toast.LENGTH_SHORT).show()
+                                    return@IconButton
                                 }
+
+                                val textItem = clip.getItemAt(0)
+                                val text = textItem.text?.toString()
+
+                                if (text.isNullOrEmpty()) {
+                                    Toast.makeText(context, "Clipboard does not contain plain text.", Toast.LENGTH_SHORT).show()
+                                    return@IconButton
+                                }
+
+                                val utf8Bytes = text.toByteArray(StandardCharsets.UTF_8)
+                                val maxBytes = 64 * 1024 // 64 KB limit
+                                if (utf8Bytes.size > maxBytes) {
+                                    Toast.makeText(context, "Clipboard content exceeds 64KB limit (${utf8Bytes.size / 1024} KB).", Toast.LENGTH_LONG).show()
+                                    return@IconButton
+                                }
+
+                                val sanitizedJson = text
+                                    .replace("\\", "\\\\")
+                                    .replace("\"", "\\\"")
+                                    .replace("\r", "\\r")
+                                    .replace("\n", "\\n")
+                                    .replace("\t", "\\t")
+
+                                webRtcClient.sendInputMessage("{\"type\":\"clipboard_sync\",\"text\":\"$sanitizedJson\"}")
+                                Toast.makeText(context, "Pasted ${text.length} characters to laptop.", Toast.LENGTH_SHORT).show()
                             }) {
                                 Icon(
                                     imageVector = Icons.Default.ContentPaste,
-                                    contentDescription = "Paste Clipboard",
-                                    tint = TextSecondary
+                                    contentDescription = "Paste Clipboard to Laptop",
+                                    tint = CyanSecondary
                                 )
                             }
                         }

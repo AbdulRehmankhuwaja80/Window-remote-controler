@@ -16,11 +16,16 @@ namespace RemoDesk.Host.UI
         private Label _lblDeviceName = null!;
         private Label _lblSessionInfo = null!;
         private Button _btnDisconnect = null!;
+        private CheckBox _chkEnableRemoteAccess = null!;
         private CheckBox _chkPauseControl = null!;
         private CheckBox _chkStartWithWindows = null!;
+        private ComboBox _cboMonitors = null!;
         private NotifyIcon _trayIcon = null!;
+        private ToolStripMenuItem _trayPauseItem = null!;
 
         public event Action? OnManualDisconnectRequested;
+        public event Action<int>? OnMonitorSelectionChanged;
+        public event Action<bool>? OnRemoteAccessToggled;
 
         public HostControlForm(HostSettings settings, SignalingClient signaling, SessionAuthorizer authorizer)
         {
@@ -47,7 +52,7 @@ namespace RemoDesk.Host.UI
         private void InitializeComponent()
         {
             Text = "RemoDesk Host — Windows Agent";
-            Size = new Size(520, 480);
+            Size = new Size(540, 560);
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(15, 23, 42); // Dark navy
             ForeColor = Color.White;
@@ -90,8 +95,8 @@ namespace RemoDesk.Host.UI
             {
                 Text = "Connection & Status",
                 ForeColor = Color.FromArgb(203, 213, 225),
-                Location = new Point(20, 90),
-                Size = new Size(465, 120),
+                Location = new Point(20, 85),
+                Size = new Size(485, 115),
             };
 
             _lblStatus = new Label
@@ -99,7 +104,7 @@ namespace RemoDesk.Host.UI
                 Text = "● Status: Connecting to gateway...",
                 ForeColor = Color.Gold,
                 Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                Location = new Point(20, 30),
+                Location = new Point(20, 26),
                 AutoSize = true,
             };
 
@@ -107,29 +112,46 @@ namespace RemoDesk.Host.UI
             {
                 Text = "No active remote session.",
                 ForeColor = Color.FromArgb(148, 163, 184),
-                Location = new Point(20, 60),
-                Size = new Size(420, 45),
+                Location = new Point(20, 55),
+                Size = new Size(440, 45),
             };
 
             grpStatus.Controls.Add(_lblStatus);
             grpStatus.Controls.Add(_lblSessionInfo);
             Controls.Add(grpStatus);
 
-            // Security & Pairing Card
+            // Security & Controls Card
             var grpSecurity = new GroupBox
             {
-                Text = "Security & Host Controls",
+                Text = "Security & Remote Access",
                 ForeColor = Color.FromArgb(203, 213, 225),
-                Location = new Point(20, 225),
-                Size = new Size(465, 110),
+                Location = new Point(20, 210),
+                Size = new Size(485, 140),
+            };
+
+            _chkEnableRemoteAccess = new CheckBox
+            {
+                Text = "Enable Remote Access (Allow authorized mobile connections)",
+                Checked = _settings.IsRemoteAccessEnabled,
+                ForeColor = Color.FromArgb(34, 197, 94), // Green
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Location = new Point(20, 28),
+                AutoSize = true,
+            };
+            _chkEnableRemoteAccess.CheckedChanged += (s, e) =>
+            {
+                _settings.IsRemoteAccessEnabled = _chkEnableRemoteAccess.Checked;
+                _settings.Save();
+                OnRemoteAccessToggled?.Invoke(_chkEnableRemoteAccess.Checked);
+                UpdateUiState();
             };
 
             _chkPauseControl = new CheckBox
             {
-                Text = "Pause Remote Input (Block incoming mouse/keyboard)",
+                Text = "Pause Remote Control (Temporarily block mouse & keyboard)",
                 Checked = _settings.RemoteControlPaused,
                 ForeColor = Color.White,
-                Location = new Point(20, 30),
+                Location = new Point(20, 62),
                 AutoSize = true,
             };
             _chkPauseControl.CheckedChanged += (s, e) =>
@@ -143,7 +165,7 @@ namespace RemoDesk.Host.UI
                 Text = "Start automatically when Windows boots",
                 Checked = _settings.StartWithWindows,
                 ForeColor = Color.White,
-                Location = new Point(20, 65),
+                Location = new Point(20, 96),
                 AutoSize = true,
             };
             _chkStartWithWindows.CheckedChanged += (s, e) =>
@@ -151,9 +173,64 @@ namespace RemoDesk.Host.UI
                 _settings.SetAutoStart(_chkStartWithWindows.Checked);
             };
 
+            grpSecurity.Controls.Add(_chkEnableRemoteAccess);
             grpSecurity.Controls.Add(_chkPauseControl);
             grpSecurity.Controls.Add(_chkStartWithWindows);
             Controls.Add(grpSecurity);
+
+            // Display & Multi-Monitor Card
+            var grpDisplay = new GroupBox
+            {
+                Text = "Display & Multi-Monitor Capture",
+                ForeColor = Color.FromArgb(203, 213, 225),
+                Location = new Point(20, 360),
+                Size = new Size(485, 75),
+            };
+
+            var lblMonitor = new Label
+            {
+                Text = "Screen:",
+                ForeColor = Color.FromArgb(148, 163, 184),
+                Location = new Point(20, 30),
+                AutoSize = true,
+            };
+
+            _cboMonitors = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(90, 26),
+                Size = new Size(375, 28),
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White,
+            };
+
+            // Populate available screens
+            var screens = Screen.AllScreens;
+            for (int i = 0; i < screens.Length; i++)
+            {
+                var scr = screens[i];
+                string name = $"Display {i + 1}: {scr.Bounds.Width}x{scr.Bounds.Height}" + (scr.Primary ? " [Primary]" : "");
+                _cboMonitors.Items.Add(name);
+            }
+            if (_settings.SelectedMonitorIndex >= 0 && _settings.SelectedMonitorIndex < _cboMonitors.Items.Count)
+            {
+                _cboMonitors.SelectedIndex = _settings.SelectedMonitorIndex;
+            }
+            else if (_cboMonitors.Items.Count > 0)
+            {
+                _cboMonitors.SelectedIndex = 0;
+            }
+
+            _cboMonitors.SelectedIndexChanged += (s, e) =>
+            {
+                _settings.SelectedMonitorIndex = _cboMonitors.SelectedIndex;
+                _settings.Save();
+                OnMonitorSelectionChanged?.Invoke(_cboMonitors.SelectedIndex);
+            };
+
+            grpDisplay.Controls.Add(lblMonitor);
+            grpDisplay.Controls.Add(_cboMonitors);
+            Controls.Add(grpDisplay);
 
             // Disconnect Button
             _btnDisconnect = new Button
@@ -163,8 +240,8 @@ namespace RemoDesk.Host.UI
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 11, FontStyle.Bold),
-                Location = new Point(20, 355),
-                Size = new Size(465, 45),
+                Location = new Point(20, 450),
+                Size = new Size(485, 45),
                 Enabled = false,
             };
             _btnDisconnect.FlatAppearance.BorderSize = 0;
@@ -186,10 +263,11 @@ namespace RemoDesk.Host.UI
             var trayMenu = new ContextMenuStrip();
             trayMenu.Items.Add("Open RemoDesk Host", null, (s, e) => { Show(); WindowState = FormWindowState.Normal; });
             trayMenu.Items.Add(new ToolStripSeparator());
-            trayMenu.Items.Add("Pause Remote Input", null, (s, e) =>
+            _trayPauseItem = new ToolStripMenuItem("Pause Remote Control", null, (s, e) =>
             {
                 _chkPauseControl.Checked = !_chkPauseControl.Checked;
             });
+            trayMenu.Items.Add(_trayPauseItem);
             trayMenu.Items.Add("Terminate Session", null, (s, e) =>
             {
                 OnManualDisconnectRequested?.Invoke();
@@ -256,8 +334,14 @@ namespace RemoDesk.Host.UI
 
         private void UpdateUiState()
         {
+            _chkEnableRemoteAccess.Checked = _settings.IsRemoteAccessEnabled;
             _chkPauseControl.Checked = _authorizer.IsPaused;
             _chkStartWithWindows.Checked = _settings.StartWithWindows;
+
+            if (_trayPauseItem != null)
+            {
+                _trayPauseItem.Text = _authorizer.IsPaused ? "Resume Remote Control" : "Pause Remote Control";
+            }
         }
 
         protected override void Dispose(bool disposing)

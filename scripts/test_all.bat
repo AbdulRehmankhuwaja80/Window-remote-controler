@@ -5,15 +5,14 @@ echo ========================================================
 
 cd /d "%~dp0\.."
 
-if not exist "backend_venv\Scripts\python.exe" (
-    echo [INFO] Creating Python virtual environment...
-    python -m venv backend_venv
-    backend_venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+set "PY_EXE=python"
+if exist "backend_venv\Scripts\python.exe" (
+    set "PY_EXE=backend_venv\Scripts\python.exe"
 )
 
 echo.
 echo [1/3] Running Backend and E2E Signaling Tests (Pytest)...
-backend_venv\Scripts\python.exe -m pytest -o asyncio_mode=auto backend\tests
+%PY_EXE% -m pytest -o asyncio_mode=auto backend\tests
 
 if %errorlevel% neq 0 (
     echo [ERROR] Backend tests failed.
@@ -22,7 +21,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [2/3] Running Live Win32 SendInput and Desktop Capture Tests...
-backend_venv\Scripts\python.exe windows-host\python-host\test_host_live.py
+%PY_EXE% windows-host\python-host\test_host_live.py
 if %errorlevel% neq 0 (
     echo [ERROR] Live Host tests failed.
     exit /b %errorlevel%

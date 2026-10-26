@@ -17,12 +17,16 @@ namespace RemoDesk.Host.Capture
         private Texture2D? _stagingTexture;
         private int _width;
         private int _height;
-        private readonly int _quality;
+        private int _quality;
+        private int _monitorIndex = 0;
+        private int _monitorCount = 1;
         private ImageCodecInfo? _jpegEncoder;
         private EncoderParameters _encoderParams;
 
         public int ScreenWidth => _width;
         public int ScreenHeight => _height;
+        public int MonitorCount => _monitorCount;
+        public int CurrentMonitor => _monitorIndex;
 
         public DesktopDuplicationCapturer(int quality = 75)
         {
@@ -30,6 +34,40 @@ namespace RemoDesk.Host.Capture
             _jpegEncoder = GetEncoder(ImageFormat.Jpeg);
             _encoderParams = new EncoderParameters(1);
             _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)quality);
+        }
+
+        public void SetQuality(int quality)
+        {
+            _quality = Math.Clamp(quality, 20, 100);
+            _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)_quality);
+        }
+
+        public void SetMonitor(int monitorIndex)
+        {
+            if (monitorIndex >= 0 && monitorIndex < _monitorCount && monitorIndex != _monitorIndex)
+            {
+                _monitorIndex = monitorIndex;
+                Reinitialize();
+            }
+        }
+
+        public void Reinitialize()
+        {
+            try
+            {
+                _stagingTexture?.Dispose();
+                _stagingTexture = null;
+                _deskDupl?.Dispose();
+                _deskDupl = null;
+                _device?.Dispose();
+                _device = null;
+
+                Initialize();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Capturer reinitialization error: {ex.Message}");
+            }
         }
 
         public bool Initialize()
@@ -40,7 +78,13 @@ namespace RemoDesk.Host.Capture
                 using var adapter = factory.GetAdapter1(0);
                 _device = new Device(adapter);
 
-                using var output = adapter.GetOutput(0);
+                _monitorCount = Math.Max(1, adapter.GetOutputCount());
+                if (_monitorIndex >= _monitorCount)
+                {
+                    _monitorIndex = 0;
+                }
+
+                using var output = adapter.GetOutput(_monitorIndex);
                 using var output1 = output.QueryInterface<Output1>();
 
                 var bounds = output.Description.DesktopBounds;

@@ -21,6 +21,8 @@ namespace RemoDesk.Host.Signaling
         public event Action<string, string>? OnCandidateReceived; // sessionId, candidate
         public event Action<string, string>? OnSessionTerminated; // sessionId, reason
         public event Action<string>? OnInputMessageReceived; // json input from client
+        public event Action<string>? OnFileMessageReceived; // file server requests
+        public event Action<string>? OnControlMessageReceived; // quality/monitor commands
         public event Action<bool>? OnConnectionStateChanged; // isConnected
 
 
@@ -173,6 +175,19 @@ namespace RemoDesk.Host.Signaling
                     case "text_input":
                     case "clipboard_sync":
                         OnInputMessageReceived?.Invoke(messageJson);
+                        break;
+
+                    case "fs_list":
+                    case "fs_read_chunk":
+                    case "fs_write_chunk":
+                    case "fs_delete":
+                        OnFileMessageReceived?.Invoke(messageJson);
+                        break;
+
+                    case "set_quality":
+                    case "select_monitor":
+                    case "get_monitors":
+                        OnControlMessageReceived?.Invoke(messageJson);
                         break;
                 }
             }

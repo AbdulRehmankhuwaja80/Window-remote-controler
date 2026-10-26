@@ -19,6 +19,7 @@ namespace RemoDesk.Host.WebRtc
         private readonly Func<bool> _isControlAllowed;
         private CancellationTokenSource? _captureCts;
         private bool _isStreaming;
+        private volatile int _targetDelayMs = 33;
 
         public event Action<string>? OnIceCandidateGenerated;
         public event Action<string>? OnSessionClosed;
@@ -35,6 +36,30 @@ namespace RemoDesk.Host.WebRtc
             _inputInjector = inputInjector;
             _isControlAllowed = isControlAllowed;
             _protocol = new DataChannelProtocol(inputInjector, isControlAllowed);
+
+            try
+            {
+                Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+            }
+            catch { }
+        }
+
+        private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+        {
+            Console.WriteLine("[WebRTC] Display settings or resolution changed, adapting screen capturer...");
+            _screenCapturer.Reinitialize();
+        }
+
+        public void SetStreamingQuality(int targetFps, int jpegQuality)
+        {
+            _targetDelayMs = 1000 / Math.Clamp(targetFps, 10, 60);
+            _screenCapturer.SetQuality(jpegQuality);
+            Console.WriteLine($"[WebRTC] Adapted streaming parameters: FPS={targetFps}, Quality={jpegQuality}");
+        }
+
+        public void SelectMonitor(int monitorIndex)
+        {
+            _screenCapturer.SetMonitor(monitorIndex);
         }
 
         public async Task<string> HandleOfferAsync(string sessionId, string sdpOffer, List<RTCIceServer> iceServers)
@@ -131,7 +156,7 @@ namespace RemoDesk.Host.WebRtc
             _isStreaming = true;
             _captureCts = new CancellationTokenSource();
 
-            int delayMs = 1000 / Math.Clamp(targetFps, 15, 60);
+            _targetDelayMs = 1000 / Math.Clamp(targetFps, 10, 60);
 
             Task.Run(async () =>
             {
@@ -153,7 +178,7 @@ namespace RemoDesk.Host.WebRtc
                         Console.WriteLine($"Capture loop error: {ex.Message}");
                     }
 
-                    await Task.Delay(delayMs, _captureCts.Token);
+                    await Task.Delay(_targetDelayMs, _captureCts.Token);
                 }
             }, _captureCts.Token);
         }
@@ -175,6 +200,11 @@ namespace RemoDesk.Host.WebRtc
 
         public void Dispose()
         {
+            try
+            {
+                Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            }
+            catch { }
             DisposeCurrentPeer();
             _screenCapturer.Dispose();
         }

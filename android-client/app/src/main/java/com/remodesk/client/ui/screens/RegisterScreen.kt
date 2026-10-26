@@ -43,6 +43,11 @@ fun RegisterScreen(
     var serverUrl by remember { mutableStateOf(tokenManager.serverUrl) }
     var isLoading by remember { mutableStateOf(false) }
 
+    var showVerifyDialog by remember { mutableStateOf(false) }
+    var verificationCodeInput by remember { mutableStateOf("") }
+    var isVerifying by remember { mutableStateOf(false) }
+    var registeredTokenResp by remember { mutableStateOf<com.remodesk.client.data.TokenResponse?>(null) }
+
 
     Scaffold(
         topBar = {
@@ -169,10 +174,18 @@ fun RegisterScreen(
                                 "password" to password,
                                 "full_name" to fullName.trim()
                             ))
+                            registeredTokenResp = resp
                             tokenManager.authToken = resp.accessToken
+                            tokenManager.refreshToken = resp.refreshToken
                             tokenManager.userEmail = email.trim()
-                            Toast.makeText(context, "Account created successfully!", Toast.LENGTH_SHORT).show()
-                            onRegisterSuccess()
+
+                            if (!resp.user.isVerified) {
+                                showVerifyDialog = true
+                                Toast.makeText(context, "Verification code sent to email.", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "Account created successfully!", Toast.LENGTH_SHORT).show()
+                                onRegisterSuccess()
+                            }
                         } catch (e: Exception) {
                             Toast.makeText(context, "Registration failed: ${e.message}", Toast.LENGTH_LONG).show()
                         } finally {
@@ -193,6 +206,82 @@ fun RegisterScreen(
                     Text("Register & Sign In", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
+        }
+
+        // Email Verification Dialog
+        if (showVerifyDialog) {
+            AlertDialog(
+                onDismissRequest = { /* Require verification */ },
+                title = { Text("Verify Your Email", color = TextPrimary, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text(
+                            "A 6-digit verification code has been generated for $email. Please enter it below to activate your account.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = verificationCodeInput,
+                            onValueChange = { verificationCodeInput = it.take(10) },
+                            label = { Text("6-Digit Code") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = ElectricBluePrimary,
+                                unfocusedBorderColor = CharcoalSurfaceVariant
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (verificationCodeInput.isBlank()) return@Button
+                            isVerifying = true
+                            coroutineScope.launch {
+                                try {
+                                    val api = ApiService.create(serverUrl, tokenManager)
+                                    api.verifyEmail(mapOf(
+                                        "email" to email.trim(),
+                                        "code" to verificationCodeInput.trim()
+                                    ))
+                                    Toast.makeText(context, "Email verified successfully!", Toast.LENGTH_SHORT).show()
+                                    showVerifyDialog = false
+                                    onRegisterSuccess()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Verification failed: ${e.message}", Toast.LENGTH_LONG).show()
+                                } finally {
+                                    isVerifying = false
+                                }
+                            }
+                        },
+                        enabled = !isVerifying && verificationCodeInput.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricBluePrimary)
+                    ) {
+                        Text(if (isVerifying) "Verifying..." else "Verify & Continue")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                try {
+                                    val api = ApiService.create(serverUrl, tokenManager)
+                                    api.resendVerification(mapOf("email" to email.trim()))
+                                    Toast.makeText(context, "New code sent to email.", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Resend failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    ) {
+                        Text("Resend Code", color = CyanSecondary)
+                    }
+                },
+                containerColor = CharcoalSurface
+            )
         }
     }
 }

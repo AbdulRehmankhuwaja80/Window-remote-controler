@@ -25,13 +25,16 @@ namespace RemoDesk.Host.FileServer
 
         public bool IsPathAuthorized(string requestedPath)
         {
+            if (string.IsNullOrWhiteSpace(requestedPath)) return false;
             try
             {
-                string fullPath = Path.GetFullPath(requestedPath);
+                string fullPath = Path.GetFullPath(requestedPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 foreach (var root in _authorizedRoots)
                 {
-                    string fullRoot = Path.GetFullPath(root);
-                    if (fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+                    if (string.IsNullOrWhiteSpace(root)) continue;
+                    string fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    if (fullPath.Equals(fullRoot, StringComparison.OrdinalIgnoreCase) ||
+                        fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                     {
                         return true;
                     }

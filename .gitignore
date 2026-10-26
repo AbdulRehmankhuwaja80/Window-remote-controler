@@ -25,6 +25,7 @@ local.properties
 .env
 
 # Binary Archives
+dist/
 Apk/*.zip
 cloudflared.exe
 *.log

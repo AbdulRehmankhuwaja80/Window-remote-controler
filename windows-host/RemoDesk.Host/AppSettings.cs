@@ -19,6 +19,9 @@ namespace RemoDesk.Host
         public bool RequireApprovalForNewSessions { get; set; } = true;
         public bool StartWithWindows { get; set; } = false;
         public bool RemoteControlPaused { get; set; } = false;
+        public bool IsRemoteAccessEnabled { get; set; } = true;
+        public int SelectedMonitorIndex { get; set; } = 0;
+        public bool FirstTimeConsentApproved { get; set; } = false;
 
         public int TargetFps { get; set; } = 30;
         public int JpegQuality { get; set; } = 75;

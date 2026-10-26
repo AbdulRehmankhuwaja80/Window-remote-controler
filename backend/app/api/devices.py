@@ -217,13 +217,57 @@ async def update_device(
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found.")
 
-    if payload.device_name is not None:
+    if payload.device_name is not None and payload.device_name != device.device_name:
+        audit = AuditLog(
+            user_id=current_user.id,
+            device_id=device.id,
+            action="DEVICE_RENAMED",
+            details=f"Device renamed from '{device.device_name}' to '{payload.device_name}'",
+        )
+        db.add(audit)
         device.device_name = payload.device_name
-    if payload.is_remote_enabled is not None:
+
+    if payload.is_remote_enabled is not None and payload.is_remote_enabled != device.is_remote_enabled:
+        audit = AuditLog(
+            user_id=current_user.id,
+            device_id=device.id,
+            action="REMOTE_ACCESS_TOGGLED",
+            details=f"Remote access set to: {'ENABLED' if payload.is_remote_enabled else 'DISABLED'}",
+        )
+        db.add(audit)
         device.is_remote_enabled = payload.is_remote_enabled
+
     if payload.status is not None:
         device.status = payload.status
 
+    await db.commit()
+    await db.refresh(device)
+    return DeviceOut.model_validate(device)
+
+
+@router.post("/{device_id}/consent", response_model=DeviceOut)
+async def device_registration_consent(
+    device_id: str,
+    approved: bool,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Device).where(Device.id == device_id, Device.user_id == current_user.id)
+    res = await db.execute(stmt)
+    device = res.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found.")
+
+    action = "DEVICE_REGISTRATION_APPROVED" if approved else "DEVICE_REGISTRATION_DENIED"
+    audit = AuditLog(
+        user_id=current_user.id,
+        device_id=device.id,
+        action=action,
+        details=f"First-time host registration {'approved' if approved else 'denied'} by owner",
+    )
+    db.add(audit)
+
+    device.is_remote_enabled = approved
     await db.commit()
     await db.refresh(device)
     return DeviceOut.model_validate(device)
@@ -240,6 +284,14 @@ async def delete_device(
     device = res.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found.")
+
+    audit = AuditLog(
+        user_id=current_user.id,
+        device_id=device.id,
+        action="DEVICE_REVOKED",
+        details=f"Device {device.device_name} was removed and revoked from account",
+    )
+    db.add(audit)
 
     # Disconnect if active
     if manager.is_host_online(device_id):

@@ -28,6 +28,10 @@ class TokenManager(context: Context) {
         get() = prefs.getString(KEY_AUTH_TOKEN, null)
         set(value) = prefs.edit().putString(KEY_AUTH_TOKEN, value).apply()
 
+    var refreshToken: String?
+        get() = prefs.getString(KEY_REFRESH_TOKEN, null)
+        set(value) = prefs.edit().putString(KEY_REFRESH_TOKEN, value).apply()
+
     var serverUrl: String
         get() = prefs.getString(KEY_SERVER_URL, "http://10.0.2.2:8000") ?: "http://10.0.2.2:8000"
         set(value) = prefs.edit().putString(KEY_SERVER_URL, value).apply()
@@ -48,16 +52,32 @@ class TokenManager(context: Context) {
         get() = prefs.getString(KEY_STREAMING_QUALITY, "Balanced (1080p / 30fps)") ?: "Balanced (1080p / 30fps)"
         set(value) = prefs.edit().putString(KEY_STREAMING_QUALITY, value).apply()
 
+    var maxReconnectAttempts: Int
+        get() = prefs.getInt(KEY_MAX_RECONNECT_ATTEMPTS, 5)
+        set(value) = prefs.edit().putInt(KEY_MAX_RECONNECT_ATTEMPTS, value).apply()
+
+    var reconnectTimeoutSeconds: Int
+        get() = prefs.getInt(KEY_RECONNECT_TIMEOUT_SEC, 30)
+        set(value) = prefs.edit().putInt(KEY_RECONNECT_TIMEOUT_SEC, value).apply()
+
+    var autoReconnect: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_RECONNECT, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_RECONNECT, value).apply()
+
     fun clear() {
         prefs.edit().clear().apply()
     }
 
     companion object {
         private const val KEY_AUTH_TOKEN = "auth_token"
+        private const val KEY_REFRESH_TOKEN = "refresh_token"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_TOUCHPAD_SENSITIVITY = "touchpad_sensitivity"
         private const val KEY_BIOMETRIC = "biometric_enabled"
         private const val KEY_STREAMING_QUALITY = "streaming_quality"
+        private const val KEY_MAX_RECONNECT_ATTEMPTS = "max_reconnect_attempts"
+        private const val KEY_RECONNECT_TIMEOUT_SEC = "reconnect_timeout_sec"
+        private const val KEY_AUTO_RECONNECT = "auto_reconnect"
     }
 }

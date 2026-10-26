@@ -50,9 +50,9 @@ flowchart TD
 ## 2. Main Features
 
 ### A. Android Mobile Client
-- **Login & Registration**: Secure account creation, token refresh, and gateway URL configuration.
-- **Device Dashboard**: Real-time online/offline status, device naming, hardware info, and one-tap Connect.
-- **Live Remote Desktop**: Live desktop video view with zoom, aspect ratio fit/fill, and latency HUD.
+- **Authentication & Security**: Email/password registration with 6-digit email verification, password recovery & reset, refresh token rotation, secure encrypted storage (`EncryptedSharedPreferences`), and AndroidX Biometric authentication (Fingerprint & Face unlock).
+- **Device Dashboard**: Real-time online/offline and session status, device renaming, remote access toggle switch, device deletion, and one-tap Connect.
+- **Live Remote Desktop**: Live desktop video view with WebRTC peer-to-peer transport, aspect ratio fit/fill, touch zoom ($1.0\times$ to $4.0\times$), connection state indicators (`Connecting`, `Connected`, `Reconnecting`, `Paused`, `Disconnected`, `Failed`), and real-time latency HUD.
 - **Touch & Gesture Engine**:
   - Single tap: Left click.
   - Double tap: Double click.
@@ -60,17 +60,21 @@ flowchart TD
   - Single-finger drag: Move cursor and drag windows.
   - Two-finger drag: Smooth mouse wheel scroll.
   - Two-finger pinch: Dynamic viewport zoom.
-- **Virtual Touchpad Mode**: Relative trackpad motion with tactile Left & Right mouse buttons.
+- **Virtual Touchpad Mode**: Relative trackpad motion with tactile Left & Right mouse buttons and adjustable sensitivity ($0.5\times$ to $3.0\times$).
 - **On-Screen Keyboard & Special Keys**: Windows Key, Ctrl, Alt, Shift, Tab, Esc, Enter, Backspace, shortcuts (Win+D, Alt+Tab, Copy/Paste), and arbitrary text typing.
-- **Remote File Manager**: Browse laptop folders, download files to phone, and upload files.
-- **Clipboard Synchronization**: One-tap phone-to-PC clipboard transfer.
+- **Remote File Manager**: Browse laptop folders in real time over WebSockets, download files chunk-by-chunk to the Android Downloads folder, upload files via Android system file picker with overwrite confirmation dialogs, and delete files with confirmation.
+- **Clipboard Synchronization**: Two-way clipboard synchronization with strict 64KB UTF-8 validation and user notification toasts.
+- **Reconnection Policy**: Configurable auto-reconnection with exponential backoff retries and timeout controls.
 
 ### B. Windows Laptop Host Agent
-- **Background Tray Service**: Runs in the notification area with a clean Dark Navy control panel.
-- **Dual Capture Architecture**: DirectX 11 DXGI Desktop Duplication API + GDI fallback.
+- **Background Tray Service**: Runs in the notification area with a clean Dark Navy control panel, session status indicators, and one-click session termination.
+- **Dual Capture Architecture**: DirectX 11 DXGI Desktop Duplication API + GDI fallback with multi-monitor enumeration and runtime monitor switching.
+- **Dynamic Resolution & Display Change Handling**: Automatically reinitializes capture surfaces when display resolution, monitor configuration, or DPI scaling changes.
+- **Adaptive Bitrate & Quality Control**: Supports dynamic streaming quality profiles (`Low Latency 720p/60fps`, `Balanced 1080p/30fps`, `High Definition 1080p/60fps`).
 - **Hardware-Accurate Input Injection**: Win32 `SendInput` supporting absolute normalized coordinates ($0..65535$), relative touchpad motion, click states, wheel deltas, Unicode text, and virtual scan codes.
-- **Host Security Guard**: Incoming session approval dialog, instant disconnect, and "Pause Remote Control" toggle.
-- **Auto-Start**: Configurable Windows boot startup via registry.
+- **Host Security Guard & Path Authorization**: Incoming session approval dialog, first-time access consent, instant disconnect, "Pause Remote Control" toggle, and strict path authorization preventing directory traversal, symlink escapes, and prefix substring collisions.
+- **Sleep Prevention**: Enforces `SetThreadExecutionState` during active sessions to ensure laptop does not sleep during remote control.
+- **Packaging & Auto-Start**: Includes Inno Setup installer script (`RemoDesk_Host_Setup.iss`) and PowerShell packaging pipeline (`package_windows_installer.ps1`) with optional Windows startup registry entry and uninstaller.
 
 ### C. Cloud Signaling & Relays
 - **WebSocket Gateway**: Session routing, SDP offer/answer exchange, trickle ICE candidates.
@@ -134,7 +138,8 @@ Android app/
 ├── docs/
 │   ├── ARCHITECTURE.md       # Full architecture specification
 │   ├── SETUP_GUIDE.md        # Step-by-step setup and deployment guide
-│   └── WEBRTC_STREAMING.md   # In-depth WebRTC transport deep dive
+│   ├── WEBRTC_STREAMING.md   # In-depth WebRTC transport deep dive
+│   └── WAKE_ON_LAN.md        # BIOS, NIC, and network Wake-on-LAN configuration guide
 ├── scripts/
 │   ├── run_backend.bat       # Start Python backend gateway
 │   ├── run_host_csharp.bat   # Start C# .NET 8 Host Agent

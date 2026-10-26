@@ -176,6 +176,22 @@ fun DashboardScreen(
                                 deviceToRename = device
                                 newDeviceName = device.deviceName
                             },
+                            onToggleRemoteAccess = {
+                                coroutineScope.launch {
+                                    try {
+                                        val api = ApiService.create(tokenManager.serverUrl, tokenManager)
+                                        api.updateDevice(device.id, mapOf("is_remote_enabled" to !device.isRemoteEnabled))
+                                        Toast.makeText(
+                                            context,
+                                            if (!device.isRemoteEnabled) "Remote access enabled for ${device.deviceName}" else "Remote access paused for ${device.deviceName}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        refreshDevices()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Failed to toggle remote access: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
                             onDelete = {
                                 coroutineScope.launch {
                                     try {
@@ -330,6 +346,7 @@ fun DeviceCard(
     onConnect: () -> Unit,
     onFiles: () -> Unit,
     onRename: () -> Unit,
+    onToggleRemoteAccess: () -> Unit,
     onDelete: () -> Unit
 ) {
     val isOnline = device.status.equals("ONLINE", ignoreCase = true)
@@ -387,11 +404,29 @@ fun DeviceCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary
             )
-            Text(
-                text = "Remote Access: ${if (device.isRemoteEnabled) "Enabled" else "Disabled"}",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (device.isRemoteEnabled) StatusOnline else StatusWarning
-            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Remote Access: ${if (device.isRemoteEnabled) "Enabled" else "Disabled"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (device.isRemoteEnabled) StatusOnline else StatusWarning
+                )
+                Switch(
+                    checked = device.isRemoteEnabled,
+                    onCheckedChange = { onToggleRemoteAccess() },
+                    modifier = Modifier.height(28.dp),
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = ElectricBluePrimary,
+                        checkedTrackColor = ElectricBluePrimary.copy(alpha = 0.5f)
+                    )
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 

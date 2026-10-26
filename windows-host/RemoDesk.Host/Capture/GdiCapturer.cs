@@ -11,14 +11,19 @@ namespace RemoDesk.Host.Capture
     {
         private int _width;
         private int _height;
+        private int _quality;
+        private int _monitorIndex = 0;
         private ImageCodecInfo? _jpegEncoder;
         private EncoderParameters _encoderParams;
 
         public int ScreenWidth => _width;
         public int ScreenHeight => _height;
+        public int MonitorCount => Screen.AllScreens.Length;
+        public int CurrentMonitor => _monitorIndex;
 
         public GdiCapturer(int quality = 75)
         {
+            _quality = quality;
             _width = Screen.PrimaryScreen?.Bounds.Width ?? 1920;
             _height = Screen.PrimaryScreen?.Bounds.Height ?? 1080;
 
@@ -27,10 +32,33 @@ namespace RemoDesk.Host.Capture
             _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)quality);
         }
 
+        public void SetQuality(int quality)
+        {
+            _quality = Math.Clamp(quality, 20, 100);
+            _encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)_quality);
+        }
+
+        public void SetMonitor(int monitorIndex)
+        {
+            if (monitorIndex >= 0 && monitorIndex < Screen.AllScreens.Length && monitorIndex != _monitorIndex)
+            {
+                _monitorIndex = monitorIndex;
+                Reinitialize();
+            }
+        }
+
+        public void Reinitialize()
+        {
+            Initialize();
+        }
+
         public bool Initialize()
         {
-            _width = Screen.PrimaryScreen?.Bounds.Width ?? 1920;
-            _height = Screen.PrimaryScreen?.Bounds.Height ?? 1080;
+            var screens = Screen.AllScreens;
+            if (_monitorIndex >= screens.Length) _monitorIndex = 0;
+            var targetScreen = screens.Length > _monitorIndex ? screens[_monitorIndex] : Screen.PrimaryScreen;
+            _width = targetScreen?.Bounds.Width ?? 1920;
+            _height = targetScreen?.Bounds.Height ?? 1080;
             return true;
         }
 
@@ -38,10 +66,16 @@ namespace RemoDesk.Host.Capture
         {
             try
             {
+                var screens = Screen.AllScreens;
+                if (_monitorIndex >= screens.Length) _monitorIndex = 0;
+                var targetScreen = screens.Length > _monitorIndex ? screens[_monitorIndex] : Screen.PrimaryScreen;
+                int screenX = targetScreen?.Bounds.X ?? 0;
+                int screenY = targetScreen?.Bounds.Y ?? 0;
+
                 var bmp = new Bitmap(_width, _height, PixelFormat.Format32bppRgb);
                 using (var g = Graphics.FromImage(bmp))
                 {
-                    g.CopyFromScreen(0, 0, 0, 0, new Size(_width, _height), CopyPixelOperation.SourceCopy);
+                    g.CopyFromScreen(screenX, screenY, 0, 0, new Size(_width, _height), CopyPixelOperation.SourceCopy);
 
                     // Draw cursor
                     DrawCursor(g);

@@ -30,6 +30,9 @@ fun SettingsScreen(
     var biometricEnabled by remember { mutableStateOf(tokenManager.isBiometricEnabled) }
     var serverUrl by remember { mutableStateOf(tokenManager.serverUrl) }
     var selectedQuality by remember { mutableStateOf(tokenManager.streamingQuality) }
+    var autoReconnect by remember { mutableStateOf(tokenManager.autoReconnect) }
+    var maxAttempts by remember { mutableIntStateOf(tokenManager.maxReconnectAttempts) }
+    var timeoutSec by remember { mutableIntStateOf(tokenManager.reconnectTimeoutSeconds) }
 
     Scaffold(
         topBar = {
@@ -102,6 +105,65 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(opt, color = TextPrimary, fontSize = 14.sp)
                         }
+                    }
+                }
+            }
+
+            // Reconnection Policy Section
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CharcoalSurface),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Reconnection Policy", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                    Text("Automatic recovery settings when mobile network drops", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto Reconnect", color = TextPrimary, fontSize = 14.sp)
+                            Text("Automatically attempt to restore lost desktop streams", color = TextSecondary, fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = autoReconnect,
+                            onCheckedChange = {
+                                autoReconnect = it
+                                tokenManager.autoReconnect = it
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = ElectricBluePrimary)
+                        )
+                    }
+
+                    if (autoReconnect) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Max Retry Attempts: $maxAttempts", color = TextPrimary, fontSize = 13.sp)
+                        Slider(
+                            value = maxAttempts.toFloat(),
+                            onValueChange = {
+                                maxAttempts = it.toInt()
+                                tokenManager.maxReconnectAttempts = maxAttempts
+                            },
+                            valueRange = 1f..10f,
+                            steps = 8,
+                            colors = SliderDefaults.colors(thumbColor = ElectricBluePrimary, activeTrackColor = ElectricBluePrimary)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Max Backoff Timeout: ${timeoutSec}s", color = TextPrimary, fontSize = 13.sp)
+                        Slider(
+                            value = timeoutSec.toFloat(),
+                            onValueChange = {
+                                timeoutSec = it.toInt()
+                                tokenManager.reconnectTimeoutSeconds = timeoutSec
+                            },
+                            valueRange = 5f..60f,
+                            steps = 10,
+                            colors = SliderDefaults.colors(thumbColor = CyanSecondary, activeTrackColor = CyanSecondary)
+                        )
                     }
                 }
             }

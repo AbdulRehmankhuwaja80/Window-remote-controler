@@ -7,13 +7,20 @@ data class User(
     val email: String,
     @SerializedName("full_name") val fullName: String?,
     @SerializedName("is_active") val isActive: Boolean,
+    @SerializedName("is_verified") val isVerified: Boolean = false,
     @SerializedName("created_at") val createdAt: String
 )
 
 data class TokenResponse(
     @SerializedName("access_token") val accessToken: String,
+    @SerializedName("refresh_token") val refreshToken: String? = null,
     @SerializedName("token_type") val tokenType: String,
     val user: User
+)
+
+data class MessageResponse(
+    val message: String,
+    val success: Boolean = true
 )
 
 data class Device(
@@ -46,11 +53,19 @@ data class SessionStartResponse(
 
 data class FileItem(
     val name: String,
-    val path: String,
+    @SerializedName("path") val path: String = "",
+    @SerializedName("full_path") val fullPath: String? = null,
     @SerializedName("is_directory") val isDirectory: Boolean,
-    val size: Long,
+    @SerializedName("size") val size: Long = 0L,
+    @SerializedName("size_bytes") val sizeBytes: Long? = null,
     @SerializedName("modified_at") val modifiedAt: String
-)
+) {
+    val effectivePath: String
+        get() = if (!fullPath.isNullOrEmpty()) fullPath else path
+
+    val effectiveSize: Long
+        get() = sizeBytes ?: size
+}
 
 sealed class InputEvent {
     data class MouseMove(val x: Float, val y: Float) : InputEvent()

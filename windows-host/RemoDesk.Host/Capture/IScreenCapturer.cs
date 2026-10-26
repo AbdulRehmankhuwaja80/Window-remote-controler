@@ -22,7 +22,12 @@ namespace RemoDesk.Host.Capture
     {
         bool Initialize();
         CapturedFrame? CaptureFrame();
+        void SetQuality(int quality);
+        void SetMonitor(int monitorIndex);
+        void Reinitialize();
         int ScreenWidth { get; }
         int ScreenHeight { get; }
+        int MonitorCount { get; }
+        int CurrentMonitor { get; }
     }
 }

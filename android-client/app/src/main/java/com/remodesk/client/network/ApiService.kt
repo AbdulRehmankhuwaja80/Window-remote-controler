@@ -16,6 +16,24 @@ interface ApiService {
     @POST("/api/auth/login")
     suspend fun login(@Body body: Map<String, String>): TokenResponse
 
+    @POST("/api/auth/verify-email")
+    suspend fun verifyEmail(@Body body: Map<String, String>): MessageResponse
+
+    @POST("/api/auth/resend-verification")
+    suspend fun resendVerification(@Body body: Map<String, String>): MessageResponse
+
+    @POST("/api/auth/forgot-password")
+    suspend fun forgotPassword(@Body body: Map<String, String>): MessageResponse
+
+    @POST("/api/auth/reset-password")
+    suspend fun resetPassword(@Body body: Map<String, String>): MessageResponse
+
+    @POST("/api/auth/refresh")
+    suspend fun refreshToken(@Body body: Map<String, String>): TokenResponse
+
+    @POST("/api/auth/logout")
+    suspend fun logout(@Body body: Map<String, String>? = null): MessageResponse
+
     @GET("/api/auth/me")
     suspend fun getProfile(): User
 
