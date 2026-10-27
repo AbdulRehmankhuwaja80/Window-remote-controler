@@ -18,11 +18,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,6 +73,10 @@ fun RemoteDesktopScreen(
     var isFitMode by remember { mutableStateOf(true) }
     var latencyMs by remember { mutableLongStateOf(0L) }
     var zoomScale by remember { mutableFloatStateOf(1.0f) }
+    var panOffsetX by remember { mutableFloatStateOf(0f) }
+    var panOffsetY by remember { mutableFloatStateOf(0f) }
+    var viewerWidth by remember { mutableFloatStateOf(0f) }
+    var viewerHeight by remember { mutableFloatStateOf(0f) }
     var currentFrame by remember { mutableStateOf<ImageBitmap?>(null) }
     var frameCount by remember { mutableIntStateOf(0) }
 
@@ -92,6 +99,9 @@ fun RemoteDesktopScreen(
 
         reconnectAttempts++
         connectionState = SessionConnectionState.RECONNECTING
+        zoomScale = 1.0f
+        panOffsetX = 0f
+        panOffsetY = 0f
         val backoffSeconds = minOf(1 shl (reconnectAttempts - 1), reconnectTimeout)
         reconnectCountdown = backoffSeconds
         statusMessage = "Reconnecting in ${backoffSeconds}s (attempt $reconnectAttempts of $maxReconnect)..."
@@ -191,24 +201,54 @@ fun RemoteDesktopScreen(
             ) {
                 // Desktop Frame Display
                 if (currentFrame != null) {
-                    Image(
-                        bitmap = currentFrame!!,
-                        contentDescription = "Remote Desktop Stream",
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .clipToBounds()
+                            .onSizeChanged { size ->
+                                viewerWidth = size.width.toFloat()
+                                viewerHeight = size.height.toFloat()
+                            }
                             .pointerInteropFilter { motionEvent ->
                                 if (!isTouchpadMode && connectionState == SessionConnectionState.CONNECTED) {
-                                    val width = context.resources.displayMetrics.widthPixels.toFloat()
-                                    val height = context.resources.displayMetrics.heightPixels.toFloat()
-                                    gestureHandler.handleTouchEvent(motionEvent, width, height) { factor ->
-                                        zoomScale = (zoomScale * factor).coerceIn(1.0f, 4.0f)
+                                    val bmp = currentFrame!!
+                                    val vw = if (viewerWidth > 0f) viewerWidth else context.resources.displayMetrics.widthPixels.toFloat()
+                                    val vh = if (viewerHeight > 0f) viewerHeight else context.resources.displayMetrics.heightPixels.toFloat()
+                                    gestureHandler.handleTouchEvent(
+                                        event = motionEvent,
+                                        viewWidth = vw,
+                                        viewHeight = vh,
+                                        imageWidth = bmp.width.toFloat(),
+                                        imageHeight = bmp.height.toFloat(),
+                                        isFitMode = isFitMode,
+                                        currentZoom = zoomScale,
+                                        currentPanX = panOffsetX,
+                                        currentPanY = panOffsetY
+                                    ) { newZoom, newPanX, newPanY ->
+                                        zoomScale = newZoom
+                                        panOffsetX = newPanX
+                                        panOffsetY = newPanY
                                     }
                                 } else {
                                     false
                                 }
                             },
-                        contentScale = if (isFitMode) ContentScale.Fit else ContentScale.Crop
-                    )
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            bitmap = currentFrame!!,
+                            contentDescription = "Remote Desktop Stream",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    scaleX = zoomScale
+                                    scaleY = zoomScale
+                                    translationX = panOffsetX
+                                    translationY = panOffsetY
+                                },
+                            contentScale = if (isFitMode) ContentScale.Fit else ContentScale.Crop
+                        )
+                    }
                 }
 
                 // Overlay for non-connected states (CONNECTING, RECONNECTING, PAUSED, FAILED, DISCONNECTED)
@@ -401,7 +441,12 @@ fun RemoteDesktopScreen(
                             }
 
                             // Fit/Fill toggle
-                            IconButton(onClick = { isFitMode = !isFitMode }) {
+                            IconButton(onClick = {
+                                isFitMode = !isFitMode
+                                zoomScale = 1.0f
+                                panOffsetX = 0f
+                                panOffsetY = 0f
+                            }) {
                                 Icon(
                                     imageVector = if (isFitMode) Icons.Default.FitScreen else Icons.Default.Fullscreen,
                                     contentDescription = "Toggle Fit/Fill",
