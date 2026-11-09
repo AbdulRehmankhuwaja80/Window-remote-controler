@@ -68,7 +68,6 @@ fun RemoteDesktopScreen(
     var reconnectCountdown by remember { mutableIntStateOf(0) }
     var statusMessage by remember { mutableStateOf("Connecting to $deviceName...") }
 
-    var isTouchpadMode by remember { mutableStateOf(false) }
     var isKeyboardVisible by remember { mutableStateOf(false) }
     var isFitMode by remember { mutableStateOf(true) }
     var latencyMs by remember { mutableLongStateOf(0L) }
@@ -210,7 +209,7 @@ fun RemoteDesktopScreen(
                                 viewerHeight = size.height.toFloat()
                             }
                             .pointerInteropFilter { motionEvent ->
-                                if (!isTouchpadMode && connectionState == SessionConnectionState.CONNECTED) {
+                                if (connectionState == SessionConnectionState.CONNECTED) {
                                     val bmp = currentFrame!!
                                     val vw = if (viewerWidth > 0f) viewerWidth else context.resources.displayMetrics.widthPixels.toFloat()
                                     val vh = if (viewerHeight > 0f) viewerHeight else context.resources.displayMetrics.heightPixels.toFloat()
@@ -391,16 +390,6 @@ fun RemoteDesktopScreen(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                 ) {
-                    // Virtual Touchpad if active
-                    if (isTouchpadMode) {
-                        VirtualTouchpad(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp),
-                            sendInput = { msg: String -> webRtcClient.sendInputMessage(msg) }
-                        )
-                    }
-
                     // On-Screen Keyboard
                     if (isKeyboardVisible) {
                         OnScreenKeyboardBar(
@@ -422,15 +411,6 @@ fun RemoteDesktopScreen(
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Touchpad toggle
-                            IconButton(onClick = { isTouchpadMode = !isTouchpadMode }) {
-                                Icon(
-                                    imageVector = Icons.Default.TouchApp,
-                                    contentDescription = "Toggle Touchpad",
-                                    tint = if (isTouchpadMode) ElectricBluePrimary else TextSecondary
-                                )
-                            }
-
                             // Keyboard toggle
                             IconButton(onClick = { isKeyboardVisible = !isKeyboardVisible }) {
                                 Icon(
