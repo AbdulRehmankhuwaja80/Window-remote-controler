@@ -30,8 +30,12 @@ namespace RemoDesk.Host
         {
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyMusic),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "OneDrive"),
         };
 
         private static readonly string SettingsFilePath = Path.Combine(

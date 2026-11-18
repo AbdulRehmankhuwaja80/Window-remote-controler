@@ -77,7 +77,6 @@ fun RemoteDesktopScreen(
     var viewerWidth by remember { mutableFloatStateOf(0f) }
     var viewerHeight by remember { mutableFloatStateOf(0f) }
     var currentFrame by remember { mutableStateOf<ImageBitmap?>(null) }
-    var frameCount by remember { mutableIntStateOf(0) }
 
     val maxReconnect = tokenManager?.maxReconnectAttempts ?: 5
     val autoReconnect = tokenManager?.autoReconnect ?: true
@@ -98,9 +97,7 @@ fun RemoteDesktopScreen(
 
         reconnectAttempts++
         connectionState = SessionConnectionState.RECONNECTING
-        zoomScale = 1.0f
-        panOffsetX = 0f
-        panOffsetY = 0f
+        // Preserve zoom and pan so the user doesn't lose their view on flaky networks
         val backoffSeconds = minOf(1 shl (reconnectAttempts - 1), reconnectTimeout)
         reconnectCountdown = backoffSeconds
         statusMessage = "Reconnecting in ${backoffSeconds}s (attempt $reconnectAttempts of $maxReconnect)..."
@@ -117,7 +114,6 @@ fun RemoteDesktopScreen(
 
     // Monitor Incoming frames, peer connection state & signaling
     DisposableEffect(webRtcClient, signalingClient) {
-        val startTime = System.currentTimeMillis()
 
         webRtcClient.onFrameReceived = { jpegBytes ->
             try {
@@ -128,11 +124,32 @@ fun RemoteDesktopScreen(
                         connectionState = SessionConnectionState.CONNECTED
                         reconnectAttempts = 0
                     }
-                    frameCount++
-                    latencyMs = ((System.currentTimeMillis() - startTime) / maxOf(frameCount, 1)).coerceAtLeast(12L)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+
+        // Handle pong responses for real RTT measurement
+        webRtcClient.onMessageReceived = { msg ->
+            try {
+                if (msg.contains("\"type\":\"pong\"")) {
+                    val jObj = com.google.gson.JsonParser.parseString(msg).asJsonObject
+                    val clientTime = jObj.get("client_time")?.asLong ?: 0L
+                    if (clientTime > 0L) {
+                        latencyMs = (System.currentTimeMillis() - clientTime).coerceAtLeast(1L)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Send periodic pings every 2 seconds for live RTT
+        val pingJob = coroutineScope.launch {
+            while (true) {
+                delay(2000L)
+                if (connectionState == SessionConnectionState.CONNECTED) {
+                    webRtcClient.sendInputMessage(InputEventProtocol.serializePing())
+                }
             }
         }
 
@@ -181,7 +198,9 @@ fun RemoteDesktopScreen(
         }
 
         onDispose {
+            pingJob.cancel()
             webRtcClient.onFrameReceived = null
+            webRtcClient.onMessageReceived = null
             webRtcClient.onConnectionStateChange = null
             if (signalingClient != null) {
                 signalingClient.onSessionTerminated = null
@@ -457,14 +476,7 @@ fun RemoteDesktopScreen(
                                     return@IconButton
                                 }
 
-                                val sanitizedJson = text
-                                    .replace("\\", "\\\\")
-                                    .replace("\"", "\\\"")
-                                    .replace("\r", "\\r")
-                                    .replace("\n", "\\n")
-                                    .replace("\t", "\\t")
-
-                                webRtcClient.sendInputMessage("{\"type\":\"clipboard_sync\",\"text\":\"$sanitizedJson\"}")
+                                webRtcClient.sendInputMessage(InputEventProtocol.serializeClipboardSync(text))
                                 Toast.makeText(context, "Pasted ${text.length} characters to laptop.", Toast.LENGTH_SHORT).show()
                             }) {
                                 Icon(

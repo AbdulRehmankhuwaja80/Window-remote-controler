@@ -44,6 +44,7 @@ class TouchGestureHandler(
     private var lastTapTime: Long = 0L
     private var lastTapX: Float = 0f
     private var lastTapY: Float = 0f
+    private var pendingSingleTapRunnable: Runnable? = null
 
     // ── Long-press detection ───────────────────────────────────────────────────
     private var longPressRunnable: Runnable? = null
@@ -229,6 +230,7 @@ class TouchGestureHandler(
                 isMultiTouch       = true
                 hasMovedBeyondSlop = true
                 cancelLongPress()
+                cancelPendingSingleTap()
 
                 if (event.pointerCount >= 2) {
                     val dx = event.getX(0) - event.getX(1)
@@ -380,19 +382,26 @@ class TouchGestureHandler(
 
                     if (timeSinceLastTap <= doubleTapWindowMs && distFromLastTap <= doubleTapSlopPx) {
                         // ── Double-tap → Windows double-click ──────────────────
-                        // Reset last-tap so a third tap won't triple-fire
+                        // Cancel the pending single-tap so it doesn't fire
+                        cancelPendingSingleTap()
                         lastTapTime = 0L
                         triggerHaptic(longPress = false)
                         sendInput(InputEventProtocol.serializeMouseMove(normX, normY))
                         sendInput(InputEventProtocol.serializeMouseButton("left", "double_click"))
                     } else {
-                        // ── Single tap → Windows left-click ───────────────────
+                        // ── Potential single tap — defer to allow double-tap window ─
                         lastTapTime = now
                         lastTapX    = event.x
                         lastTapY    = event.y
-                        triggerHaptic(longPress = false)
-                        sendInput(InputEventProtocol.serializeMouseMove(normX, normY))
-                        sendInput(InputEventProtocol.serializeMouseButton("left", "click"))
+
+                        // Schedule the single click after the double-tap window expires
+                        val tapRunnable = Runnable {
+                            triggerHaptic(longPress = false)
+                            sendInput(InputEventProtocol.serializeMouseMove(normX, normY))
+                            sendInput(InputEventProtocol.serializeMouseButton("left", "click"))
+                        }
+                        pendingSingleTapRunnable = tapRunnable
+                        mainHandler.postDelayed(tapRunnable, doubleTapWindowMs)
                     }
                 }
 
@@ -408,6 +417,7 @@ class TouchGestureHandler(
             // ── Gesture cancelled (e.g. system interrupt) ──────────────────────
             MotionEvent.ACTION_CANCEL -> {
                 cancelLongPress()
+                cancelPendingSingleTap()
                 isMultiTouch       = false
                 hasMovedBeyondSlop = false
                 longPressFired     = false
@@ -424,6 +434,11 @@ class TouchGestureHandler(
     private fun cancelLongPress() {
         longPressRunnable?.let { mainHandler.removeCallbacks(it) }
         longPressRunnable = null
+    }
+
+    private fun cancelPendingSingleTap() {
+        pendingSingleTapRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingSingleTapRunnable = null
     }
 
     private fun triggerHaptic(longPress: Boolean) {

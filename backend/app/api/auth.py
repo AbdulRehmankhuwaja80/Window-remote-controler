@@ -1,4 +1,9 @@
 from datetime import datetime, timedelta, timezone
+import asyncio
+import logging
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +36,92 @@ from backend.app.schemas import (
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+logger = logging.getLogger(__name__)
+
+
+async def send_verification_email(to_email: str, code: str) -> None:
+    """
+    Send a verification code email via SMTP.
+    Skips silently if SMTP_HOST is not configured (dev mode).
+    """
+    if not settings.SMTP_HOST:
+        logger.info(f"[DEV] Verification code for {to_email}: {code}  (set SMTP_HOST to send real email)")
+        return
+
+    subject = "Verify your RemoDesk account"
+    body_text = f"Your RemoDesk verification code is: {code}\n\nIt expires in {settings.VERIFICATION_CODE_EXPIRE_MINUTES} minutes."
+    body_html = f"""\
+<html><body>
+<p>Welcome to <strong>RemoDesk</strong>!</p>
+<p>Your email verification code is:</p>
+<h2 style="letter-spacing:4px">{code}</h2>
+<p>It expires in {settings.VERIFICATION_CODE_EXPIRE_MINUTES} minutes.</p>
+<p>If you did not register, ignore this email.</p>
+</body></html>"""
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = settings.SMTP_FROM
+    msg["To"] = to_email
+    msg.attach(MIMEText(body_text, "plain"))
+    msg.attach(MIMEText(body_html, "html"))
+
+    def _send() -> None:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.login(settings.SMTP_USER, settings.SMTP_PASS)
+            smtp.sendmail(settings.SMTP_FROM, [to_email], msg.as_string())
+
+    try:
+        await asyncio.to_thread(_send)
+        logger.info(f"Verification email sent to {to_email}")
+    except Exception as exc:
+        logger.error(f"Failed to send verification email to {to_email}: {exc}")
+        # Non-fatal — user can request resend; don't block registration
+
+
+async def send_password_reset_email(to_email: str, token: str) -> None:
+    """Send a password-reset link via SMTP. Skips silently if SMTP not configured."""
+    if not settings.SMTP_HOST:
+        logger.info(f"[DEV] Password reset token for {to_email}: {token}  (set SMTP_HOST to send real email)")
+        return
+
+    subject = "Reset your RemoDesk password"
+    body_text = (
+        f"Your RemoDesk password reset token is: {token}\n\n"
+        f"It expires in {settings.RESET_TOKEN_EXPIRE_MINUTES} minutes.\n"
+        "If you did not request this, ignore this email."
+    )
+    body_html = f"""\
+<html><body>
+<p>You requested a <strong>RemoDesk</strong> password reset.</p>
+<p>Your reset token is:</p>
+<code style="font-size:14px">{token}</code>
+<p>It expires in {settings.RESET_TOKEN_EXPIRE_MINUTES} minutes.</p>
+<p>If you did not request this, ignore this email.</p>
+</body></html>"""
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = settings.SMTP_FROM
+    msg["To"] = to_email
+    msg.attach(MIMEText(body_text, "plain"))
+    msg.attach(MIMEText(body_html, "html"))
+
+    def _send() -> None:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.login(settings.SMTP_USER, settings.SMTP_PASS)
+            smtp.sendmail(settings.SMTP_FROM, [to_email], msg.as_string())
+
+    try:
+        await asyncio.to_thread(_send)
+        logger.info(f"Password reset email sent to {to_email}")
+    except Exception as exc:
+        logger.error(f"Failed to send password reset email to {to_email}: {exc}")
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
@@ -76,6 +167,10 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
 
     await db.commit()
     await db.refresh(user)
+
+    # Send verification email (skipped silently when SMTP not configured)
+    if not is_verified:
+        await send_verification_email(email, verification_code)
 
     access_token = create_access_token(
         data={"sub": user.id, "email": user.email},
@@ -152,6 +247,7 @@ async def resend_verification(payload: ResendVerificationRequest, db: AsyncSessi
     db.add(audit)
 
     await db.commit()
+    await send_verification_email(email, code)
     return MessageResponse(message="A new verification code has been issued. Check your email.")
 
 
@@ -176,6 +272,7 @@ async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Dep
     db.add(audit)
 
     await db.commit()
+    await send_password_reset_email(email, token)
     return MessageResponse(message="Password recovery token generated and sent to email address.")
 
 

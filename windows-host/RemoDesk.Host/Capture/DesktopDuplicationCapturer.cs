@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using SharpDX;
 using SharpDX.Direct3D11;
 using SharpDX.DXGI;
@@ -155,6 +156,12 @@ namespace RemoDesk.Host.Capture
                 bmp.UnlockBits(mapDest);
                 _device.ImmediateContext.UnmapSubresource(_stagingTexture, 0);
 
+                // Overlay the Windows cursor onto the captured bitmap (same as GdiCapturer)
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    DrawCursor(g);
+                }
+
                 byte[] compressed;
                 using (var ms = new MemoryStream())
                 {
@@ -210,6 +217,50 @@ namespace RemoDesk.Host.Capture
                 if (codec.FormatID == format.Guid) return codec;
             }
             return null;
+        }
+
+        // --- Cursor overlay (P/Invoke) ---
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int x;
+            public int y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct CURSORINFO
+        {
+            public int cbSize;
+            public int flags;
+            public IntPtr hCursor;
+            public POINT ptScreenPos;
+        }
+
+        private const int CURSOR_SHOWING = 0x00000001;
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorInfo(out CURSORINFO pci);
+
+        [DllImport("user32.dll")]
+        private static extern bool DrawIcon(IntPtr hDC, int X, int Y, IntPtr hIcon);
+
+        private static void DrawCursor(Graphics g)
+        {
+            try
+            {
+                var ci = new CURSORINFO { cbSize = Marshal.SizeOf(typeof(CURSORINFO)) };
+                if (GetCursorInfo(out ci) && ci.flags == CURSOR_SHOWING)
+                {
+                    IntPtr hdc = g.GetHdc();
+                    DrawIcon(hdc, ci.ptScreenPos.x, ci.ptScreenPos.y, ci.hCursor);
+                    g.ReleaseHdc(hdc);
+                }
+            }
+            catch
+            {
+                // Cursor drawing is best-effort
+            }
         }
 
         public void Dispose()

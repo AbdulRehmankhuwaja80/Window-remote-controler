@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     SESSION_TIMEOUT_SECONDS: int = 300
     HEARTBEAT_INTERVAL_SECONDS: int = 15
 
+    # SMTP / Email
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASS: str = os.getenv("SMTP_PASS", "")
+    SMTP_FROM: str = os.getenv("SMTP_FROM", "noreply@remodesk.app")
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="allow")
 
 
