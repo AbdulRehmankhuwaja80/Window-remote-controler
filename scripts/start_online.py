@@ -21,6 +21,14 @@ if not os.path.exists(cloudflared_exe):
     print(f"[ERROR] {cloudflared_exe} not found!", flush=True)
     sys.exit(1)
 
+# Ensure repo_root is in PYTHONPATH
+env = dict(os.environ)
+env["PYTHONPATH"] = repo_root + (os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else "")
+
+logs_dir = os.path.join(repo_root, "logs")
+os.makedirs(logs_dir, exist_ok=True)
+backend_log = open(os.path.join(logs_dir, "backend.log"), "a", encoding="utf-8")
+
 # 1. Check if backend is already healthy
 backend_healthy = False
 try:
@@ -41,8 +49,10 @@ if not backend_healthy:
     proc = subprocess.Popen(
         backend_cmd,
         cwd=repo_root,
+        env=env,
+        stdout=backend_log,
+        stderr=backend_log,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS if os.name == 'nt' else 0,
-        close_fds=True
     )
     print(f"Backend process spawned (PID: {proc.pid})", flush=True)
     for i in range(10):
@@ -66,24 +76,27 @@ if active_hosts < 1:
     python_host_script = os.path.join(repo_root, "windows-host", "python-host", "host_agent.py")
     if os.path.exists(python_host_script):
         print("=== STARTING PYTHON HOST AGENT ===", flush=True)
+        host_log = open(os.path.join(logs_dir, "host_agent.log"), "a", encoding="utf-8")
         subprocess.Popen(
             [venv_python, python_host_script],
             cwd=repo_root,
+            env=env,
+            stdout=host_log,
+            stderr=host_log,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS if os.name == 'nt' else 0,
-            close_fds=True
         )
         time.sleep(2)
 
 # Query laptop pairing PIN from remodesk.db
-partner_name = "LAPTOP-4A9AUPQS"
-partner_pin = "467008"
+partner_name = "AbdulRehman"
+partner_pin = "867902"
 try:
     import sqlite3
     db_path = os.path.join(repo_root, "remodesk.db")
     if os.path.exists(db_path):
         with sqlite3.connect(db_path) as conn:
-            row = conn.execute("SELECT device_name, pairing_code FROM devices WHERE device_name LIKE '%LAPTOP%' ORDER BY last_seen DESC LIMIT 1").fetchone()
-            if row:
+            row = conn.execute("SELECT device_name, pairing_code FROM devices ORDER BY last_seen DESC LIMIT 1").fetchone()
+            if row and row[0] and row[1]:
                 partner_name = row[0]
                 partner_pin = row[1]
 except Exception:

@@ -5,6 +5,7 @@ echo        REMODESK ONLINE CLOUDFLARE SYSTEM LAUNCHER
 echo ========================================================
 echo.
 cd /d "%~dp0"
+set "PYTHONPATH=%~dp0"
 
 python scripts\start_online.py
 
