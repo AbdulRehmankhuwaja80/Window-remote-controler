@@ -5,6 +5,7 @@ echo          REMODESK REMOTE DESKTOP SYSTEM LAUNCHER
 echo ========================================================
 echo.
 cd /d "%~dp0"
+set "PYTHONPATH=%~dp0"
 
 :: 1. Start Services via python helper
 python scripts\start_services.py

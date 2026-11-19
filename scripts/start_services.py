@@ -3,6 +3,7 @@ import time
 import urllib.request
 import os
 import sys
+import json
 
 repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 venv_python = os.path.join(repo_root, "backend_venv", "Scripts", "python.exe")
@@ -19,11 +20,18 @@ try:
         raw = resp.read().decode('utf-8')
         print(f"Backend is already running and healthy! ({raw})")
         backend_healthy = True
-        import json
         data = json.loads(raw)
         active_hosts = data.get("active_hosts", 0)
 except Exception:
     pass
+
+# Ensure repo_root is on PYTHONPATH
+env = dict(os.environ)
+env["PYTHONPATH"] = repo_root + (os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else "")
+
+logs_dir = os.path.join(repo_root, "logs")
+os.makedirs(logs_dir, exist_ok=True)
+backend_log = open(os.path.join(logs_dir, "backend.log"), "a", encoding="utf-8")
 
 if not backend_healthy:
     print("=== STARTING REMODESK BACKEND ===")
@@ -38,8 +46,10 @@ if not backend_healthy:
     proc = subprocess.Popen(
         backend_cmd,
         cwd=repo_root,
+        env=env,
+        stdout=backend_log,
+        stderr=backend_log,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS if os.name == 'nt' else 0,
-        close_fds=True
     )
     print(f"Backend process spawned (PID: {proc.pid})")
 
@@ -65,11 +75,14 @@ if active_hosts == 0:
     python_host_script = os.path.join(repo_root, "windows-host", "python-host", "host_agent.py")
     if os.path.exists(python_host_script):
         print(f"\n=== STARTING HOST AGENT: {python_host_script} ===")
+        host_log = open(os.path.join(logs_dir, "host_agent.log"), "a", encoding="utf-8")
         host_proc = subprocess.Popen(
             [venv_python, python_host_script],
             cwd=repo_root,
+            env=env,
+            stdout=host_log,
+            stderr=host_log,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS if os.name == 'nt' else 0,
-            close_fds=True
         )
         print(f"Host Agent spawned (PID: {host_proc.pid})")
         time.sleep(2)
