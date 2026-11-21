@@ -173,6 +173,38 @@ async def pair_device_by_code(
     return DeviceOut.model_validate(device)
 
 
+@router.post("/{device_id}/regenerate-pin")
+async def regenerate_device_pin(
+    device_id: str,
+    auth_key: str = None,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Device).where(Device.id == device_id)
+    res = await db.execute(stmt)
+    device = res.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found.")
+
+    if auth_key and device.auth_key != auth_key:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid auth key.")
+
+    new_pin = f"{random.randint(100000, 999999)}"
+    device.pairing_code = new_pin
+
+    audit = AuditLog(
+        user_id=device.user_id,
+        device_id=device.id,
+        action="PIN_REGENERATED",
+        details=f"New pairing PIN generated for {device.device_name}",
+    )
+    db.add(audit)
+
+    await db.commit()
+    await db.refresh(device)
+    return {"device_id": device.id, "pairing_code": new_pin}
+
+
+
 
 @router.get("/{device_id}", response_model=DeviceOut)
 async def get_device(
